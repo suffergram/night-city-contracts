@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0d19"><meta name="description" content="Neon Contracts — полноэкранный RPG-платформер в Найт-Сити.">
+  <title>NEON 2077 / Контракты Найт-Сити</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="cyberpunk.css"><link rel="stylesheet" href="fullscreen.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topbar"><a class="brand" href="./" aria-label="Neon Contracts"><span class="brand-mark">N<span>╱</span></span><div>NEON<span class="brand-tag">2077 / NIGHT CITY CONTRACTS</span></div></a><div class="top-actions"><span class="save-state" id="save-state">● СИНХРОНИЗИРОВАНО</span><button class="menu-button" id="inventory-button">Персонаж <kbd>B</kbd></button><button class="menu-button" id="skills-button">Способности</button><button class="icon-button" id="help-button" aria-label="Управление">?</button><button class="icon-button" id="fullscreen-button" aria-label="Полный экран">⛶</button><button class="icon-button" id="pause-button" aria-label="Пауза">Ⅱ</button></div></header>
+    <section class="heading"><div><div class="eyebrow">НЕ ДАЙ ГОРОДУ СТЕРЕТЬ ТЕБЯ</div><h1 id="scene-title">Убежище H10</h1><p id="scene-subtitle">Подготовься к контракту.</p></div><div class="chapter"><span class="chapter-symbol">↗</span><div><small>УГРОЗА / АВТОПОДБОР</small><strong id="expedition-label">Контракт · 01</strong></div></div></section>
+    <div class="workspace">
+      <section class="game-panel" aria-label="Игровой мир">
+        <div class="game-toolbar"><div class="location"><span class="live-dot"></span><span id="location-label">НЕЙТРАЛЬНАЯ ТЕРРИТОРИЯ</span></div><span id="world-info">Найт-Сити</span></div>
+        <div class="canvas-wrap">
+          <canvas id="game" width="1200" height="660" tabindex="0" aria-label="WASD — движение, 1–4 — выбрать оружие, ЛКМ — атака, ПКМ — блок, Shift — перекат, E — действие."></canvas>
+          <div class="scene-badge"><span id="scene-icon">⌂</span><div><strong id="badge-title">Убежище H10</strong><small id="badge-subtitle">Связь установлена</small></div></div>
+          <div class="combat-readout"><span id="combat-state">БОЕВОЙ ИНТЕРФЕЙС</span><small id="weapon-label">Катана</small><strong id="ammo-label">КАТАНА / ЛКМ</strong></div>
+          <div id="interaction" class="interaction hidden"></div><div id="toast" class="toast hidden" role="status"></div><div id="overlay" class="overlay hidden"></div>
+          <div class="touch-controls"><button data-key="a" aria-label="Влево">◀</button><button data-key="d" aria-label="Вправо">▶</button><button data-key="w" aria-label="Прыжок">↑</button><span></span><button data-key="q" aria-label="Медгель">✚</button><button data-key="e" aria-label="Действие">E</button><button data-key="shift" aria-label="Перекат">↔</button><button data-key="k" aria-label="Блок">◇</button><button data-key="j" aria-label="Атака выбранным оружием">◎</button></div>
+        </div>
+        <div class="game-footer"><span><i class="status-dot"></i><span id="objective">Подключись к терминалу контрактов</span></span><button id="hub-button">Эвакуация ↗</button></div>
+      </section>
+      <aside class="sidebar">
+        <section class="character-card"><div class="section-label">БИОМОНИТОР <span>H10 / ONLINE</span></div><div class="hero-summary"><div class="portrait"></div><div><h2>Наёмник</h2><p>Соло <span id="level-label">· Уровень 1</span></p></div></div><div class="bar-label"><span>Здоровье</span><strong id="hp-text">100 / 100</strong></div><div class="bar hp"><i id="hp-bar"></i></div><div class="bar-label"><span>Выносливость</span><strong id="stamina-text">100 / 100</strong></div><div class="bar stamina"><i id="stamina-bar"></i></div><div class="bar-label"><span>Опыт</span><strong id="xp-text">0 / 320</strong></div><div class="bar xp"><i id="xp-bar"></i></div><div class="stat-grid"><div><small>Катана / Пистолет</small><strong id="damage-stat">12 / 8</strong></div><div><small>Броня</small><strong id="armor-stat">4</strong></div><div><small>€$</small><strong id="gold-stat">60</strong></div></div></section>
+        <section class="equipment-card"><div class="section-label">СНАРЯЖЕНИЕ <span id="bag-count">0 / 24</span></div><div id="equipment"></div></section>
+        <section class="quest-card"><h3 id="quest-title">Город сожрёт слабых</h3><p id="quest-description"></p><span id="quest-progress">Медгели: 3</span></section>
+      </aside>
+    </div>
+    <nav id="weapon-bar" class="weapon-bar" aria-label="Выбор оружия: 1–4"></nav>
+    <section class="bottom-row"><div class="controls"><span><kbd>WASD</kbd> Движение</span><span><kbd>ЛКМ</kbd> Атака</span><span><kbd>ПКМ</kbd> Блок</span><span><kbd>Shift</kbd> Перекат</span><span><kbd>R</kbd> Перезарядка</span><span><kbd>E</kbd> Действие</span><span><kbd>Q</kbd> Медгель</span></div><span class="build-label">BUILD 0.7 / WATSON</span></section>
+  </main>
+  <script type="module" src="src/game.js"></script>
+</body>
+</html>
