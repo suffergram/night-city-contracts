@@ -15,6 +15,14 @@ Requested canvas size was 1536 × 1536; the tool delivered 1254 × 1254. The ren
 
 ## Frame layout
 
+Version 0.8 adds the articulated ranged-aim atlas `mercenary-aim-rig-v1.png`.
+See [ART-0.8.md](../ART-0.8.md) for its generation prompt, frame layout and runtime registration.
+Version 0.8.1 adds bent-elbow upper/lower poses in `mercenary-aim-extremes-v2.png`;
+see [ART-0.8.1.md](../ART-0.8.1.md).
+Version 0.8.2 separates empty hand layers from firearms: `mercenary-aim-body-hands-v1.png`
+and `mercenary-aim-hands-extremes-v1.png`. Current composition and prompts:
+[ART-0.8.2.md](../ART-0.8.2.md).
+
 Hero, left to right, six frames in each row:
 
 1. Idle / breathing.

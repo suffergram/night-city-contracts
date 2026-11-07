@@ -1,6 +1,6 @@
 {
-  "name": "neon-contracts",
-  "version": "0.7.0",
+  "name": "night-city-contracts",
+  "version": "0.8.2",
   "private": true,
   "type": "module",
   "scripts": {

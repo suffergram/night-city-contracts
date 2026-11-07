@@ -11,6 +11,7 @@ import { advanceAnimation, animationInfo } from '../src/animation.js';
 import { preloadSprites, previewMarkup, paintPreviews, muzzleAnchor } from '../src/raster.js';
 import { preloadEnvironment } from '../src/environment.js';
 import * as weapons from '../src/weapons.js';
+import * as aiming from '../src/aim.js';
 
 async function boot(saved) {
   const gradient = { addColorStop() {} };
@@ -26,7 +27,7 @@ async function boot(saved) {
     }); return elements.get(id);
   };
   const storage = new Map(saved ? [['emberfall-save-v1', saved]] : []);
-  const context = vm.createContext({ ...worldModule, ...combat, ...skills, ...weapons, mercenarySvg, advanceAnimation, animationInfo, preloadEnvironment, preloadSprites, previewMarkup, paintPreviews, muzzleAnchor, drawWorld, console, Math, JSON, Date, structuredClone,
+  const context = vm.createContext({ ...worldModule, ...combat, ...skills, ...weapons, ...aiming, mercenarySvg, advanceAnimation, animationInfo, preloadEnvironment, preloadSprites, previewMarkup, paintPreviews, muzzleAnchor, drawWorld, console, Math, JSON, Date, structuredClone,
     document: { getElementById: element, querySelector: element, querySelectorAll: () => [], addEventListener() {} }, window: { addEventListener(name, cb) { events[name] = cb; } },
     localStorage: { getItem: k => storage.get(k), setItem: (k, v) => storage.set(k, v) },
     setTimeout: () => 1, clearTimeout() {}, requestAnimationFrame() {}, ResizeObserver: class { observe() {} },
@@ -164,4 +165,23 @@ test('reload continues once through running, reversing, jumping and landing with
   assert.equal(run('bullets.length'),0);assert.ok(run('player.reload')<remaining);
   run('keys.clear()');tick(145);assert.equal(run('player.reload'),0);assert.equal(run('player.ammo'),10);
   assert.equal(run('bullets.length'),0);
+});
+
+test('real pointer aiming fires from the rotated muzzle at cursor elevation on either side', async()=>{
+  const {run,elements,events}=await boot();
+  run('selectWeapon("gun");player.x=500;player.y=300;camera=120;');
+  for(const [x,y,up] of [[1100,50,true],[50,50,true],[50,640,false],[1100,640,false]]) {
+    run('player.shotCooldown=0;player.fireVisual=0;bullets=[];');
+    elements.get('game').listeners.pointerdown({button:0,clientX:x,clientY:y,pointerType:'mouse',preventDefault(){}});
+    events.pointerup({button:0});
+    assert.equal(run('bullets.length'),1);
+    assert.equal(run('bullets[0].vy<0'),up);
+    assert.equal(run('Math.sign(bullets[0].vx)'),x===50?-1:1);
+    assert.ok(run('Math.abs(bullets[0].x-aimedMuzzle(player).x)<1e-8'));
+    assert.ok(run('Math.abs(bullets[0].y-aimedMuzzle(player).y)<1e-8'));
+    assert.ok(run('Math.abs(bullets[0].vx/WEAPONS.gun.speed-aimGeometry(player).direction.x)<1e-8'));
+    assert.ok(run('Math.abs(bullets[0].vy/WEAPONS.gun.speed-aimGeometry(player).direction.y)<1e-8'));
+  }
+  run('mouse.active=false;player.shotCooldown=0;shoot();');
+  assert.equal(run('bullets.at(-1).vy'),0,'keyboard-only fire remains horizontal');
 });

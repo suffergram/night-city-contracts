@@ -5,6 +5,7 @@ import { drawRasterActor } from './raster.js';
 import { drawRasterBackdrop, drawRasterEnvironment, HUMAN_SCALE } from './environment.js';
 import { ACTOR_HEIGHT, spriteHeight, WEAPONS } from './weapons.js';
 import { animationInfo } from './animation.js';
+import { canAim, aimedMuzzle, aimGeometry } from './aim.js';
 
 export function drawWorld(ctx, canvas, state) {
   const { mode, world, player: p, profile, camera, time, particles, floats, bullets, shake, mouse } = state;
@@ -45,6 +46,13 @@ export function drawWorld(ctx, canvas, state) {
     if (e.hp < e.maxHp) { rect(e.x - 3, e.y - 6, e.w + 6, 3, '#232b44'); rect(e.x - 3, e.y - 6, (e.w + 6) * Math.max(0, e.hp / e.maxHp), 3, '#ff6976'); }
   }
   actor(p.x, p.y, p.facing, 'hero', p);
+  if (mouse.active && canAim(p)) {
+    const tip = aimedMuzzle(p), direction = aimGeometry(p).direction;
+    const distance = Math.hypot(mouse.x + camera - tip.x, mouse.y - tip.y);
+    const end = { x: tip.x + direction.x * distance, y: tip.y + direction.y * distance };
+    line(tip.x + direction.x * 5, tip.y + direction.y * 5, end.x, end.y, '#f7ef5525');
+    ellipse(end.x, end.y, 1.8, 1.8, '#f7ef55');
+  }
   for (const b of bullets) line(b.x - b.vx * .012, b.y - b.vy * .012, b.x, b.y, b.owner === 'player' ? '#f5f16c' : '#ff6386', 1.8);
   for (const particle of particles) { ctx.globalAlpha = Math.min(1, particle.life * 2); rect(particle.x, particle.y, 2, 2, particle.color); } ctx.globalAlpha = 1;
   for (const f of floats) { ctx.globalAlpha = Math.min(1, f.life * 2); text(f.text, f.x, f.y, 10, f.color); } ctx.globalAlpha = 1;

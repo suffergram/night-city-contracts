@@ -3,9 +3,10 @@ import { center, physics, segmentHit, projectile, incomingDamage, updateEnemies 
 import { drawWorld } from './render.js';
 import { BRANCHES, SKILLS, availablePoints, spentPoints, skillBudget, skillStatus, learnSkill } from './skills.js';
 import { advanceAnimation, animationInfo } from './animation.js';
-import { preloadSprites, previewMarkup, paintPreviews, muzzleAnchor } from './raster.js';
+import { preloadSprites, previewMarkup, paintPreviews } from './raster.js';
+import { aimAngle, aimedMuzzle, aimGeometry } from './aim.js';
 import { preloadEnvironment } from './environment.js';
-import { ACTOR_HEIGHT, WEAPONS, weaponSlots, slotForKey, muzzlePosition } from './weapons.js';
+import { ACTOR_HEIGHT, WEAPONS, weaponSlots, slotForKey } from './weapons.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game'), ctx = canvas.getContext('2d');
@@ -22,6 +23,7 @@ const player = { x: 540, y: GROUND - ACTOR_HEIGHT, w: 20, h: ACTOR_HEIGHT, vx: 0
 let mode = 'hub', world, camera = 0, time = 0, modal = null, last = 0, accumulator = 0, hudTimer = 0, previewTime = 0;
 let particles = [], floats = [], bullets = [], shake = 0, toastTimer, stock = [], target = null, bagFilter = 'all';
 const mouse = { active: false, x: 0, y: 0 };
+player.aimAngle = 0;
 const rarityNames = ['Стандарт', 'Редкий', 'Легендарный'], rarityClasses = ['', 'rare', 'epic'];
 const icons = { weapon: '⚔', gun: '⌐', rifle: '⌁', shotgun: '═', head: '▱', torso: '◈', legs: 'Ⅱ', feet: '⌁' };
 const escape = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -94,7 +96,7 @@ function updateUI() {
 function resetCombat() {
   Object.assign(player, { vx: 0, vy: 0, grounded: true, invuln: 0, attack: 0, cooldown: 0, jumpBuffer: 0, drop: 0, coyote: 0,
     dodge: 0, dodgeCooldown: 0, blocking: false, guardBreak: 0, regenDelay: 0, shotCooldown: 0, fireVisual: 0, reload: 0,
-    ammo: BALANCE.magazine, stamina: stats(profile).maxStamina, healCooldown: 0, reloadDuration: 0 });
+    ammo: BALANCE.magazine, stamina: stats(profile).maxStamina, healCooldown: 0, reloadDuration: 0, aimAngle: 0 });
   particles = []; floats = []; bullets = []; target = null; mouse.active = false;
   player.animation = { name: 'idle', time: 0 };
   player.magazines = Object.fromEntries(weaponSlots.filter(slot => WEAPONS[slot].magazine).map(slot => [slot, WEAPONS[slot].magazine]));
@@ -268,7 +270,10 @@ window.addEventListener('keydown', event => {
   event.preventDefault(); if (!event.repeat) press(key);
 });
 window.addEventListener('keyup', event => keys.delete(physicalKeys[event.code]));
-function aim(event) { const bounds = canvas.getBoundingClientRect(); mouse.x = (event.clientX - bounds.left) * canvas.width / bounds.width; mouse.y = (event.clientY - bounds.top) * canvas.height / bounds.height; mouse.active = true; if (player.dodge <= 0) player.facing = mouse.x + camera >= center(player).x ? 1 : -1; }
+function updateAim() {
+  player.aimAngle = aimAngle(player, mouse.active ? { x: mouse.x + camera, y: mouse.y } : null);
+}
+function aim(event) { const bounds = canvas.getBoundingClientRect(); mouse.x = (event.clientX - bounds.left) * canvas.width / bounds.width; mouse.y = (event.clientY - bounds.top) * canvas.height / bounds.height; mouse.active = true; if (player.dodge <= 0) player.facing = mouse.x + camera >= center(player).x ? 1 : -1; updateAim(); }
 canvas.addEventListener('pointermove', event => { if (event.pointerType !== 'touch' && !modal) aim(event); });
 canvas.addEventListener('pointerleave', () => { mouse.active = false; });
 canvas.addEventListener('pointerdown', event => {
@@ -346,11 +351,11 @@ function shoot() {
   const cfg = WEAPONS[player.activeWeapon];
   if (cfg.kind !== 'gun' || !profile.equipment[player.activeWeapon] || player.shotCooldown > 0 || player.reload > 0 || player.dodge > 0 || player.blocking || player.attack > 0) return;
   if (!player.ammo) { reload(); return; }
-  const info = animationInfo(player);
-  const from = muzzlePosition(player, { ...info, muzzle: muzzleAnchor(player) || info.muzzle });
-  const to = mouse.active ? { x: mouse.x + camera, y: mouse.y } : { x: from.x + player.facing * 500, y: from.y };
+  updateAim();
+  const from = aimedMuzzle(player);
   const damage = stats(profile)[player.activeWeapon === 'rifle' ? 'rifleDamage' : player.activeWeapon === 'shotgun' ? 'shotgunDamage' : 'gunDamage'];
-  const angle = Math.atan2(to.y - from.y, to.x - from.x);
+  const direction = aimGeometry(player).direction;
+  const angle = Math.atan2(direction.y, direction.x);
   for (let pellet = 0; pellet < cfg.pellets; pellet++) {
     const spread = cfg.pellets > 1 ? (pellet / (cfg.pellets - 1) * 2 - 1) * cfg.spread : (Math.random() - .5) * cfg.spread;
     bullets.push(projectile('player', from, { x: from.x + Math.cos(angle + spread) * 500, y: from.y + Math.sin(angle + spread) * 500 }, damage, cfg.speed));
@@ -391,6 +396,7 @@ function update(dt) {
   else if (!p.regenDelay) p.stamina = Math.min(stats(profile).maxStamina, p.stamina + stats(profile).staminaRegen * dt);
   if (keys.has('s') && p.grounded && p.y + p.h < GROUND - 5) { p.drop = .24; p.grounded = false; p.y += 5; p.coyote = 0; }
   if (p.jumpBuffer > 0 && p.coyote > 0 && p.dodge <= 0) { p.vy = -620; p.grounded = false; p.jumpBuffer = 0; p.coyote = 0; }
+  updateAim();
   if (keys.has('j')) useWeapon();
   physics(p, world, dt);
   updateEnemies(world, p, bullets, dt, damagePlayer);
@@ -398,6 +404,7 @@ function update(dt) {
   if (p.attack > 0 && p.attack < .32 - animationInfo(p).contactAt && !p.attackHit) { p.attackHit = true; slash(); }
   updateBullets(dt); if (terminal()) return;
   camera += (Math.max(0, Math.min(world.width - canvas.width, p.x - canvas.width * .38)) - camera) * Math.min(1, dt * 7);
+  updateAim();
   shake = Math.max(0, shake - dt);
   for (const particle of particles) { particle.x += particle.vx * dt; particle.y += particle.vy * dt; particle.vy += 300 * dt; particle.life -= dt; }
   particles = particles.filter(particle => particle.life > 0);
