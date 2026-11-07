@@ -4,6 +4,23 @@ import { readFile } from 'node:fs/promises';
 import { ENVIRONMENT_ASSETS, PARALLAX_LAYERS, HUMAN_SCALE, parallaxTiles } from '../src/environment.js';
 import { WEAPON_ART } from '../src/raster.js';
 import { WEAPONS, ACTOR_HEIGHT } from '../src/weapons.js';
+import {lightLevel,lampMotes} from '../src/ambient.js';
+
+test('faulty neon has independent brief outages while regular lights shimmer continuously',()=>{
+  const levels=Array.from({length:1200},(_,i)=>lightLevel(i/100,17,true));
+  assert.ok(Math.min(...levels)<.1);assert.ok(Math.max(...levels)>.8);
+  assert.ok(levels.filter(v=>v<.1).length<levels.length*.08);
+  for(let i=0;i<1200;i++)assert.ok(lightLevel(i/100,17)>.7);
+  assert.notEqual(lightLevel(3,17,true),lightLevel(3,92,true));
+});
+test('ambient particles follow their lamp and freeze exactly when game time is paused',()=>{
+  const a=lampMotes(2,13,100,200,18),b=lampMotes(2,13,400,150,18);
+  assert.deepEqual(a,lampMotes(2,13,100,200,18));assert.equal(a.length,6);
+  for(let i=0;i<a.length;i++){
+    assert.ok(Math.abs(b[i].x-a[i].x-300)<1e-9);assert.ok(Math.abs(b[i].y-a[i].y+50)<1e-9);
+  }
+  assert.notDeepEqual(a,lampMotes(3,13,100,200,18));
+});
 
 test('painted city, modular props and weapon artwork exist as local high-resolution PNGs', async()=>{
   for(const asset of [...Object.values(ENVIRONMENT_ASSETS),WEAPON_ART]){

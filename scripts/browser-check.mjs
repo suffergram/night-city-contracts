@@ -57,6 +57,22 @@ try {
   await send('Page.navigate', { url: `http://127.0.0.1:${port}` });
   await until(() => evaluate("document.getElementById('scene-title')?.textContent.includes('Убежище') && document.getElementById('equipment')?.children.length===3"));
   await evaluate("import('/src/raster.js').then(m=>m.preloadSprites())");
+  if(process.argv.includes('--environment-review')){
+    await send('Page.navigate',{url:`http://127.0.0.1:${port}/scripts/environment-preview.html`});
+    await until(()=>evaluate('window.environmentPreviewReady===true'));
+    await evaluate('environmentPreview.setTime(0)');
+    const still=await evaluate('document.querySelector("canvas").toDataURL()');
+    await evaluate('environmentPreview.setTime(0)');assert.equal(await evaluate('document.querySelector("canvas").toDataURL()'),still);
+    await screenshot('night-city-environment-hub.png');
+    const road=await evaluate('Array.from(document.querySelector("canvas").getContext("2d").getImageData(0,610,1200,1).data)');
+    await evaluate('environmentPreview.setTime(1.7)');
+    assert.notEqual(await evaluate('document.querySelector("canvas").toDataURL()'),still,'lighting and motes animate');
+    assert.deepEqual(await evaluate('Array.from(document.querySelector("canvas").getContext("2d").getImageData(0,610,1200,1).data)'),road,'asphalt stays still while lights animate');
+    await evaluate('environmentPreview.setScene("sector");environmentPreview.setCamera(1024);environmentPreview.setTime(4)');
+    await screenshot('night-city-environment-sector.png');
+    assert.ok(await evaluate(`(async()=>{const {drawRasterEnvironment}=await import('/src/environment.js');const c=document.createElement('canvas');c.width=1500;c.height=660;const x=c.getContext('2d');for(const camera of [-30,0,1019,1024,1487,1493,3000]){x.clearRect(0,0,1500,660);x.save();x.translate(-camera,0);drawRasterEnvironment(x,c,{width:5000,platforms:[],chests:[],portal:{x:4800}},'hub',camera,0);x.restore();const d=x.getImageData(0,545,1500,115).data;for(let i=3;i<d.length;i+=4)if(d[i]!==255)return false;}return true;})()`),'road remains opaque across tile edges and camera positions');
+    assert.deepEqual(errors,[]);console.log('Environment checks passed: animated lights, paused particles, stationary asphalt and gap-free road coverage.');
+  }else{
   if(!process.argv.includes('--run-review')){
   assert.ok(await evaluate("(async()=>{const {drawRasterActor}=await import('/src/raster.js');const {DEFAULT_PROFILE}=await import('/src/world.js');const paint=gear=>{const c=document.createElement('canvas');c.width=240;c.height=240;const x=c.getContext('2d');x.translate(120,235);drawRasterActor(x,{},'hero',gear,{sheet:'hero',frame:0,height:220});return x.getImageData(0,0,240,240).data;};const base=structuredClone(DEFAULT_PROFILE.equipment),a=paint(base);const same=(b,rect)=>{const [left,top,w,h]=rect;for(let y=top;y<top+h;y++)for(let x=left;x<left+w;x++)for(let k=0;k<4;k++){const i=(y*240+x)*4+k;if(a[i]!==b[i])return false;}return true;};for(const slot of ['torso','legs','feet','head']){const gear=structuredClone(base);gear[slot]={id:'material-regression-'+slot,name:'test',rarity:2};const b=paint(gear);if(!same(b,[168,140,70,55]))throw Error(slot+' blade');if(slot!=='head'&&!same(b,[113,8,38,35]))throw Error(slot+' face');if(!same(b,[65,104,17,22]))throw Error(slot+' arm');if(slot==='head'&&!same(b,[114,54,37,26]))throw Error(slot+' collar');if(!a.some((v,i)=>v!==b[i]))throw Error(slot+' unchanged');}return true;})()"), 'equipment changes preserve katana, face, cyberarm and collar pixels in the inventory preview');
   assert.ok(await evaluate("(async()=>{const {drawRasterActor}=await import('/src/raster.js');const {DEFAULT_PROFILE}=await import('/src/world.js');const base=structuredClone(DEFAULT_PROFILE.equipment),changed=structuredClone(base);for(const slot of ['head','legs','feet'])changed[slot]={id:'different-'+slot,name:'test',rarity:2};const paint=(sheet,frame,gear)=>{const c=document.createElement('canvas');c.width=240;c.height=240;const x=c.getContext('2d');x.translate(120,235);drawRasterActor(x,{},'hero',gear,{sheet,frame,height:220});return x.getImageData(0,0,240,240).data;};for(const [sheet,frames]of [['aimExtremes',[0,12,24]],['aimRig',[24,26,28]]])for(const frame of frames){const a=paint(sheet,frame,base),b=paint(sheet,frame,changed);if(a.some((v,i)=>v!==b[i]))return false;const jacket=structuredClone(base);jacket.torso=null;const d=paint(sheet,frame,jacket);if(!a.some((v,i)=>v!==d[i]))return false;}return true;})()"), 'arm materials follow the jacket and are unaffected by helmet, trousers or boots');
@@ -230,6 +246,7 @@ try {
   assert.deepEqual(errors, []);
   console.log(process.argv.includes('--run-review')?'Run review passed: whole body frames rendered without a waist splice.':'Browser checks passed: raster atlases, equipment, skills, portal, combat, mobile layout and whole run frames; no runtime exceptions.');
   console.log('Screenshots: artifacts/neon-*.png');
+  }
 } finally {
   socket?.close(); browser?.kill(); server.kill();
 }

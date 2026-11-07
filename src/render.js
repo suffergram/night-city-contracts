@@ -16,9 +16,9 @@ export function drawWorld(ctx, canvas, state) {
   const text = (value, x, y, size = 12, color = '#4ce3e6') => { ctx.fillStyle = color; ctx.font = `bold ${size}px Consolas,monospace`; ctx.textAlign = 'center'; ctx.fillText(value, x, y); };
   const glow = (x, y, radius, color) => { const g = ctx.createRadialGradient(x, y, 0, x, y, radius); g.addColorStop(0, color); g.addColorStop(1, 'transparent'); ctx.fillStyle = g; ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2); };
   ctx.clearRect(0, 0, W, H);
-  if (!drawRasterBackdrop(ctx, canvas, camera)) rect(0, 0, W, H, '#101528');
+  if (!drawRasterBackdrop(ctx, canvas, camera,time)) rect(0, 0, W, H, '#101528');
   ctx.save(); ctx.translate(-Math.round(camera) + (shake > 0 ? Math.sin(time * 90) * 3 : 0), 0);
-  if (!drawRasterEnvironment(ctx, canvas, world, mode, camera)) {
+  if (!drawRasterEnvironment(ctx, canvas, world, mode, camera,time)) {
     rect(camera, GROUND, W, H - GROUND, '#151b29');
     for (const platform of world.platforms) if (!platform.ground) rect(platform.x, platform.y, platform.w, platform.h, '#343d50');
   }

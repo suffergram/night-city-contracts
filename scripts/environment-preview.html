@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Окружение — Night City Contracts</title>
+<style>body{margin:0;background:#10121e;color:#f0bdce;font:14px system-ui;padding:16px}header{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:12px}button,select{background:#291c2c;color:#f0bdce;border:1px solid #805267;padding:7px}input{accent-color:#f477a1}canvas{display:block;width:min(100%,1400px);height:auto;border:1px solid #4e3445}p{color:#b4afbd}</style>
+<header><button id="pause">Пауза</button><label>Сцена <select id="scene"><option value="hub">Хаб</option><option value="sector">Промзона</option></select></label><label>Камера <input id="camera" type="range" min="0" max="2800" value="0" step="1"></label><span>Неон · частицы у фонарей · пар · сухой асфальт</span></header>
+<canvas id="preview" width="1200" height="660"></canvas>
+<p>Перемести камеру, чтобы проверить дорогу на стыках. Пауза останавливает свет и частицы.</p>
+<script type="module">
+import {preloadEnvironment,drawRasterBackdrop,drawRasterEnvironment} from '../src/environment.js';
+import {preloadSprites,drawRasterActor} from '../src/raster.js';
+import {GROUND,DEFAULT_PROFILE} from '../src/world.js';
+const canvas=document.getElementById('preview'),ctx=canvas.getContext('2d');
+const world={width:4000,platforms:[],chests:[],portal:{x:2100}};
+let time=0,last=0,playing=true;
+await Promise.all([preloadEnvironment(),preloadSprites()]);
+function draw(){
+  const camera=Number(document.getElementById('camera').value),mode=document.getElementById('scene').value;
+  ctx.fillStyle='#101528';ctx.fillRect(0,0,canvas.width,canvas.height);
+  drawRasterBackdrop(ctx,canvas,camera,time);ctx.save();ctx.translate(-camera,0);
+  drawRasterEnvironment(ctx,canvas,world,mode,camera,time);
+  for(const x of [220,1050,1900,2800])if(x>camera-100&&x<camera+canvas.width+100){ctx.save();ctx.translate(x,GROUND);drawRasterActor(ctx,{grounded:true,animation:{name:'idle',time}},'hero',DEFAULT_PROFILE.equipment,{height:60});ctx.restore();}
+  ctx.restore();
+}
+document.getElementById('pause').onclick=()=>{playing=!playing;document.getElementById('pause').textContent=playing?'Пауза':'Продолжить';};
+window.environmentPreview={setTime(t){playing=false;time=t;draw();},setCamera(x){document.getElementById('camera').value=x;draw();},setScene(value){document.getElementById('scene').value=value;draw();}};
+window.environmentPreviewReady=true;
+function frame(now){if(playing)time+=last?Math.min(.05,(now-last)/1000):0;last=now;draw();requestAnimationFrame(frame);}requestAnimationFrame(frame);
+</script></html>
