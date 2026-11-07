@@ -2,6 +2,7 @@ import { animationFrame, animationInfo, atlasCell } from './animation.js';
 import { appearance } from './character.js';
 import { spriteGeometry } from './weapons.js';
 import { canAim, aimBodyFrame, aimGeometry } from './aim.js';
+import { materialPose, materialAt, tintLeather } from './material-masks.js';
 
 export const SPRITES = {
   hero: new URL('../assets/characters/mercenary-clean-v1.png', import.meta.url).href,
@@ -15,6 +16,7 @@ export const SPRITES = {
 export const WEAPON_ART = new URL('../assets/characters/weapons-v1.png', import.meta.url).href;
 const weaponParts = new Map();
 const sheets = new Map(), variants = new Map();
+const materialMasks = new Map();
 const muzzleAnchors = new Map();
 let preloadPromise;
 function loadSheet(key, url) {
@@ -63,7 +65,22 @@ function weaponPart(slot) {
   weaponParts.set(slot,result);return result;
 }
 const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-const jacketPixel = (r, g, b) => r > 35 && r > g * 1.25 && r > b * 1.1 && Math.abs(g - b) < r * .22;
+function sourceMaterialMask(sheetName,data,width,height) {
+  if(materialMasks.has(sheetName)) return materialMasks.get(sheetName);
+  const cellW=width/6,cellH=height/6,poses=Array.from({length:36},(_,frame)=>materialPose(sheetName,frame));
+  const ids=new Uint8Array(width*height),histogram=new Uint32Array(36*256),counts=new Uint32Array(36),median=new Float32Array(36);
+  for(let y=0;y<height;y++) for(let x=0;x<width;x++) {
+    const p=y*width+x,i=p*4;if(data[i+3]<30)continue;
+    const col=Math.floor(x/cellW),row=Math.floor(y/cellH),frame=row*6+col;
+    const id=materialAt(poses[frame],x/cellW-col,y/cellH-row,data[i],data[i+1],data[i+2]);ids[p]=id;
+    if(id===1){const light=Math.round(data[i]*.55+data[i+1]*.3+data[i+2]*.15);histogram[frame*256+light]++;counts[frame]++;}
+  }
+  for(let frame=0;frame<36;frame++) {
+    let n=0,light=0;while(light<255&&(n+=histogram[frame*256+light])<counts[frame]/2)light++;
+    median[frame]=Math.max(20,light);
+  }
+  const result={ids,median};materialMasks.set(sheetName,result);return result;
+}
 function heroMaterial(equipment, sheetName = 'hero') {
   const source = sheets.get(sheetName); if (!source || !equipment || typeof document === 'undefined') return source?.image;
   const signature = sheetName + JSON.stringify(['head', 'torso', 'legs', 'feet'].map(slot => equipment[slot] ? [slot, equipment[slot].id, equipment[slot].rarity] : [slot, null]));
@@ -77,37 +94,25 @@ function heroMaterial(equipment, sheetName = 'hero') {
   const visor = rgb(appearance(equipment.head, 'head').accent);
   const legs = rgb(appearance(equipment.legs, 'legs').color), feet = rgb(appearance(equipment.feet, 'feet').color);
   const cellW = surface.width / 6, cellH = surface.height / 6;
-  const histogram = new Uint32Array(36 * 256), counts = new Uint32Array(36), median = new Float32Array(36);
-  // Independent paintings have different exposure. Match their cloth midtones before tinting.
-  for (let y = 0; y < surface.height; y++) for (let x = 0; x < surface.width; x++) {
-    const i = (y * surface.width + x) * 4, fy = (y % cellH) / cellH;
-    const armsOnly = sheetName === 'aimExtremes' || sheetName === 'aimRig' && y >= cellH * 4;
-    if (data[i+3] < 30 || !(armsOnly || fy > .12 && fy < .68) || !jacketPixel(data[i],data[i+1],data[i+2])) continue;
-    const frame = Math.floor(y / cellH) * 6 + Math.floor(x / cellW), light = Math.round(data[i] * .55 + data[i+1] * .3 + data[i+2] * .15);
-    histogram[frame * 256 + light]++; counts[frame]++;
-  }
-  for (let frame = 0; frame < 36; frame++) {
-    let n = 0, light = 0;
-    while (light < 255 && (n += histogram[frame * 256 + light]) < counts[frame] / 2) light++;
-    median[frame] = Math.max(20, light);
-  }
+  const {ids,median}=sourceMaterialMask(sheetName,data,surface.width,surface.height);
   for (let y = 0; y < surface.height; y++) for (let x = 0; x < surface.width; x++) {
     const i = (y * surface.width + x) * 4; if (data[i + 3] < 30) continue;
     const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
-    const fy = (y % (surface.height / 6)) / (surface.height / 6);
-    const armsOnly = sheetName === 'aimExtremes' || sheetName === 'aimRig' && y >= surface.height * 4 / 6;
-    if (jacketPixel(r,g,b) && (armsOnly || fy > .12 && fy < .68)) {
+    const material=ids[y*surface.width+x];
+    if (material===1) {
       const frame = Math.floor(y / cellH) * 6 + Math.floor(x / cellW);
       const light = Math.max(.18, Math.min(1.9, (r * .55 + g * .3 + b * .15) / median[frame]));
       for (let channel = 0; channel < 3; channel++) data[i + channel] = Math.min(255, target[channel] * light);
     }
-    if (!armsOnly && fy < .25 && g > r * 1.3 && b > r * 1.3) {
+    if (material===4) {
       const light = (g + b) / 400;
       for (let channel = 0; channel < 3; channel++) data[i + channel] = equipment.head ? Math.min(255, visor[channel] * light) : (r + g + b) / 4;
     }
-    if (!armsOnly && (fy > .62 && fy < .84 && equipment.legs?.id !== 'starter-legs' || fy > .84 && equipment.feet?.id !== 'starter-feet')) {
-      const value = (r + g + b) / 3, item = fy > .84 ? equipment.feet : equipment.legs, tone = fy > .84 ? feet : legs;
-      if (Math.max(r, g, b) - Math.min(r, g, b) < 45) for (let channel = 0; channel < 3; channel++) data[i + channel] = item ? Math.min(255, tone[channel] * value / 62) : value * .78;
+    if (material===2||material===3) {
+      const item=material===2?equipment.legs:equipment.feet;
+      if(item?.id===(material===2?'starter-legs':'starter-feet'))continue;
+      const tone=material===2?legs:feet,tinted=tintLeather(r,g,b,tone);
+      for(let channel=0;channel<3;channel++)data[i+channel]=tinted[channel];
     }
   }
   c.putImageData(pixels, 0, 0); variants.set(signature, surface);
