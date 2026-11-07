@@ -6,9 +6,10 @@ import { drawRasterBackdrop, drawRasterEnvironment, HUMAN_SCALE } from './enviro
 import { ACTOR_HEIGHT, spriteHeight, WEAPONS } from './weapons.js';
 import { animationInfo } from './animation.js';
 import { canAim, aimedMuzzle, aimGeometry } from './aim.js';
+import {findLadder} from './combat.js';
 
 export function drawWorld(ctx, canvas, state) {
-  const { mode, world, player: p, profile, camera, time, particles, floats, bullets, shake, mouse } = state;
+  const { mode, world, player: p, profile, camera,cameraY=0, time, particles, floats, bullets, shake, mouse } = state;
   const W = canvas.width, H = canvas.height;
   const rect = (x, y, w, h, color) => { ctx.fillStyle = color; ctx.fillRect(x, y, w, h); };
   const line = (x1, y1, x2, y2, color, width = 1) => { ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
@@ -16,18 +17,19 @@ export function drawWorld(ctx, canvas, state) {
   const text = (value, x, y, size = 12, color = '#4ce3e6') => { ctx.fillStyle = color; ctx.font = `bold ${size}px Consolas,monospace`; ctx.textAlign = 'center'; ctx.fillText(value, x, y); };
   const glow = (x, y, radius, color) => { const g = ctx.createRadialGradient(x, y, 0, x, y, radius); g.addColorStop(0, color); g.addColorStop(1, 'transparent'); ctx.fillStyle = g; ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2); };
   ctx.clearRect(0, 0, W, H);
-  if (!drawRasterBackdrop(ctx, canvas, camera,time)) rect(0, 0, W, H, '#101528');
-  ctx.save(); ctx.translate(-Math.round(camera) + (shake > 0 ? Math.sin(time * 90) * 3 : 0), 0);
+  if (!drawRasterBackdrop(ctx, canvas, camera,time,world,cameraY)) rect(0, 0, W, H, '#101528');
+  ctx.save(); ctx.translate(-Math.round(camera) + (shake > 0 ? Math.sin(time * 90) * 3 : 0), -Math.round(cameraY));
   if (!drawRasterEnvironment(ctx, canvas, world, mode, camera,time)) {
     rect(camera, GROUND, W, H - GROUND, '#151b29');
     for (const platform of world.platforms) if (!platform.ground) rect(platform.x, platform.y, platform.w, platform.h, '#343d50');
   }
   const gate = world.portal, open = mode === 'hub' || world.kills === world.enemies.length;
+  const gateY=gate.y??GROUND;
   const gateColor = open ? '#4fe9df' : '#f55870';
   const gateHeight = HUMAN_SCALE.gate.height;
-  glow(gate.x, GROUND - gateHeight * .5, 65, open ? '#3df2df18' : '#ff345026');
-  for (let i = 0; i < 6; i++) line(gate.x - 28, GROUND - gateHeight * .8 + ((i * 12 + time * 10) % (gateHeight * .72)), gate.x + 28, GROUND - gateHeight * .8 + ((i * 12 + time * 10) % (gateHeight * .72)), open ? '#43e4d92b' : '#f65f7377');
-  text(mode === 'hub' ? 'КОНТРАКТЫ' : open ? 'ЭВАКУАЦИЯ' : 'ЗАБЛОКИРОВАНО', gate.x, GROUND - gateHeight - 12, 9, gateColor);
+  glow(gate.x, gateY - gateHeight * .5, 65, open ? '#3df2df18' : '#ff345026');
+  for (let i = 0; i < 6; i++) line(gate.x - 28, gateY - gateHeight * .8 + ((i * 12 + time * 10) % (gateHeight * .72)), gate.x + 28, gateY - gateHeight * .8 + ((i * 12 + time * 10) % (gateHeight * .72)), open ? '#43e4d92b' : '#f65f7377');
+  text(mode === 'hub' ? 'КОНТРАКТЫ' : open ? 'ЭВАКУАЦИЯ' : 'ЗАБЛОКИРОВАНО', gate.x, gateY - gateHeight - 12, 9, gateColor);
   if (mode === 'hub') {
     actor(312, GROUND - ACTOR_HEIGHT, 1, 'merchant', { h: ACTOR_HEIGHT, grounded: true });
     actor(800, GROUND - ACTOR_HEIGHT, -1, 'trainer', { h: ACTOR_HEIGHT, grounded: true });
@@ -38,7 +40,7 @@ export function drawWorld(ctx, canvas, state) {
   for (const c of world.chests) if (!c.open) glow(c.x + 18, c.y + 10, 27, '#f2e35b20');
   const scanner = skillEffects(profile).scanner;
   for (const e of world.enemies) {
-    if (e.dead || e.x < camera - 100 || e.x > camera + W + 100) continue;
+    if (e.dead || e.x < camera - 100 || e.x > camera + W + 100||e.y<cameraY-120||e.y>cameraY+H+100) continue;
     if (e.state === 'windup' && e.role === 'gunner') { ctx.setLineDash([5, 5]); line(e.x + e.w / 2, e.y + 20, e.aimX, e.aimY, '#ff486a99'); ctx.setLineDash([]); }
     actor(e.x, e.y, e.facing, e.role, e);
     if (scanner) text(`${({ gunner: 'СТРЕЛОК', runner: 'САМУРАЙ', heavy: 'ШТУРМ' })[e.role]} ${Math.ceil(e.hp)}/${e.maxHp} / ${e.state === 'recover' ? 'УЯЗВИМ' : e.state === 'windup' ? 'АТАКА' : 'ПОИСК'}`, e.x + e.w / 2, e.y - 26, 8, '#6aefec');
@@ -46,9 +48,10 @@ export function drawWorld(ctx, canvas, state) {
     if (e.hp < e.maxHp) { rect(e.x - 3, e.y - 6, e.w + 6, 3, '#232b44'); rect(e.x - 3, e.y - 6, (e.w + 6) * Math.max(0, e.hp / e.maxHp), 3, '#ff6976'); }
   }
   actor(p.x, p.y, p.facing, 'hero', p);
+  if(mode!=='hub'&&(p.climbing!=null||findLadder(p,world)))text('W / S · ЛЕСТНИЦА',p.x+p.w/2,p.y-16,8,'#a5f4e4');
   if (mouse.active && canAim(p)) {
     const tip = aimedMuzzle(p), direction = aimGeometry(p).direction;
-    const distance = Math.hypot(mouse.x + camera - tip.x, mouse.y - tip.y);
+    const distance = Math.hypot(mouse.x + camera - tip.x, mouse.y+cameraY - tip.y);
     const end = { x: tip.x + direction.x * distance, y: tip.y + direction.y * distance };
     line(tip.x + direction.x * 5, tip.y + direction.y * 5, end.x, end.y, '#f7ef5525');
     ellipse(end.x, end.y, 1.8, 1.8, '#f7ef55');
@@ -57,6 +60,7 @@ export function drawWorld(ctx, canvas, state) {
   for (const particle of particles) { ctx.globalAlpha = Math.min(1, particle.life * 2); rect(particle.x, particle.y, 2, 2, particle.color); } ctx.globalAlpha = 1;
   for (const f of floats) { ctx.globalAlpha = Math.min(1, f.life * 2); text(f.text, f.x, f.y, 10, f.color); } ctx.globalAlpha = 1;
   ctx.restore();
+  // Navigation is rendered separately inside the biomonitor HUD.
   // Weather is intentionally absent; combat feedback is independent of scenery.
   const vignette = ctx.createRadialGradient(W / 2, 320, 200, W / 2, 320, W * .8); vignette.addColorStop(0, '#02031200'); vignette.addColorStop(1, '#02031277'); ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
   if (mouse.active) { const x = mouse.x, y = mouse.y; line(x - 8, y, x - 3, y, '#f7ef55'); line(x + 3, y, x + 8, y, '#f7ef55'); line(x, y - 8, x, y - 3, '#f7ef55'); line(x, y + 3, x, y + 8, '#f7ef55'); }
@@ -73,4 +77,14 @@ export function drawWorld(ctx, canvas, state) {
     if (hero && p.attack > 0 && p.attack < .35 - animationInfo(p).contactAt && WEAPONS[p.activeWeapon]?.kind === 'melee' && profile.equipment.weapon) { ctx.strokeStyle = '#c3eaf188'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.arc(7, -32, 56, -.8, 1); ctx.stroke(); }
     ctx.restore();
   }
+}
+
+export function drawMinimap(ctx, canvas, world, player) {
+  const {width:w,height:h}=canvas,top=world.top||0,bottom=GROUND+20;
+  const px=x=>8+x/world.width*(w-16),py=y=>8+(y-top)/(bottom-top)*(h-16);
+  ctx.clearRect(0,0,w,h);ctx.save();ctx.strokeStyle='#67828c';ctx.lineWidth=1;
+  for(const p of world.platforms){ctx.beginPath();ctx.moveTo(px(p.x),py(p.y));ctx.lineTo(px(p.x+p.w),py(p.y));ctx.stroke();}
+  ctx.strokeStyle='#b4a563';for(const l of world.ladders||[]){ctx.beginPath();ctx.moveTo(px(l.x),py(l.top));ctx.lineTo(px(l.x),py(l.bottom));ctx.stroke();}
+  ctx.fillStyle=world.kills===world.enemies.length?'#65f5bb':'#f65b80';ctx.fillRect(px(world.portal.x)-2,py(world.portal.y??GROUND)-3,4,4);
+  ctx.fillStyle='#75eef2';ctx.fillRect(px(player.x+player.w/2)-2,py(player.y+player.h)-3,4,4);ctx.restore();
 }

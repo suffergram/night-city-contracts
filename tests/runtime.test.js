@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import * as worldModule from '../src/world.js';
 import * as combat from '../src/combat.js';
-import { drawWorld } from '../src/render.js';
+import { drawWorld, drawMinimap } from '../src/render.js';
 import * as skills from '../src/skills.js';
 import { mercenarySvg } from '../src/character.js';
 import { advanceAnimation, animationInfo } from '../src/animation.js';
@@ -27,7 +27,7 @@ async function boot(saved) {
     }); return elements.get(id);
   };
   const storage = new Map(saved ? [['emberfall-save-v1', saved]] : []);
-  const context = vm.createContext({ ...worldModule, ...combat, ...skills, ...weapons, ...aiming, mercenarySvg, advanceAnimation, animationInfo, preloadEnvironment, preloadSprites, previewMarkup, paintPreviews, muzzleAnchor, drawWorld, console, Math, JSON, Date, structuredClone,
+  const context = vm.createContext({ ...worldModule, ...combat, ...skills, ...weapons, ...aiming, mercenarySvg, advanceAnimation, animationInfo, preloadEnvironment, preloadSprites, previewMarkup, paintPreviews, muzzleAnchor, drawWorld, drawMinimap, console, Math, JSON, Date, structuredClone,
     document: { getElementById: element, querySelector: element, querySelectorAll: () => [], addEventListener() {} }, window: { addEventListener(name, cb) { events[name] = cb; } },
     localStorage: { getItem: k => storage.get(k), setItem: (k, v) => storage.set(k, v) },
     setTimeout: () => 1, clearTimeout() {}, requestAnimationFrame() {}, ResizeObserver: class { observe() {} },
@@ -47,6 +47,22 @@ test('game boots, renders the cyberpunk hub, moves, jumps, trades and persists u
   run('merchant()'); click('potion'); assert.equal(run('profile.gold'), 25); assert.equal(run('profile.potions'), 4);
   run('profile.gold=200; trainer()'); click('strength'); assert.equal(run('profile.strength'), 1); assert.equal(run('profile.gold'), 80);
   assert.equal(JSON.parse(storage.get('emberfall-save-v1')).version, 4);
+});
+
+test('W/S climb generated ladders, space detaches and the camera follows upper floors',async()=>{
+  const {run,tick}=await boot();
+  run('expedition(1);world=generateLevel(1,23,"megablock");world.enemies=[];const l=world.ladders[0];player.x=l.x-player.w/2;player.y=l.bottom-player.h;keys.clear();press("w");');
+  tick(240);assert.equal(run('player.y+player.h'),run('l.top'));assert.ok(run('cameraY')<0);
+  run('keys.clear();press("s");');tick(40);assert.notEqual(run('player.climbing'),null);
+  run('keys.clear();press(" ");');tick(1);assert.equal(run('player.climbing'),null);assert.ok(run('player.vy')<0);
+  run('render()');
+});
+
+test('mouse elevation and physical muzzle use world coordinates after the camera moves vertically',async()=>{
+  const {run}=await boot();
+  run('expedition(1);world=generateLevel(1,17,"megablock");world.enemies=[];player.y=Math.min(...world.floors)-player.h;player.vx=0;player.facing=1;cameraY=world.top;selectWeapon("gun");const origin=aimOrigin(player);mouse.active=true;mouse.x=origin.x-camera+200;mouse.y=origin.y-cameraY-200;updateAim();const tip=aimedMuzzle(player);shoot();');
+  assert.ok(Math.abs(run('player.aimAngle')+Math.PI/4)<1e-9);
+  assert.equal(run('bullets.at(-1).y'),run('tip.y'));assert.ok(run('bullets.at(-1).vy')<0);
 });
 test('portal uses character strength on every reentry instead of restarting at difficulty one', async () => {
   const { run, click } = await boot();
@@ -90,16 +106,20 @@ test('left mouse attacks the selected weapon; block, roll and reload still work'
 });
 test('swept player bullets damage enemies and cover intercepts them', async () => {
   const { run } = await boot();
-  run('expedition(1); const foe=world.enemies[0]; world.enemies=[foe]; foe.x=500; foe.y=GROUND-foe.h; foe.dodge=0; const targetY=foe.y+20; const hp=foe.hp; bullets=[projectile("player",{x:450,y:targetY},{x:700,y:targetY},20,850)]; updateBullets(.1);');
+  run('expedition(1); const foe=world.enemies.find(e=>e.role==="gunner"); world.enemies=[foe]; world.platforms=[{x:0,y:GROUND,w:world.width,h:150,ground:true}]; foe.x=500; foe.y=GROUND-foe.h; foe.dodge=0; const targetY=foe.y+20; const hp=foe.hp; bullets=[projectile("player",{x:450,y:targetY},{x:700,y:targetY},20,850)]; updateBullets(.1);');
   assert.equal(run('world.enemies[0].hp'), run('hp-20'));
   run('world.platforms.push({x:460,y:targetY-10,w:5,h:30}); bullets=[projectile("player",{x:450,y:targetY},{x:700,y:targetY},20,850)]; const before=foe.hp; updateBullets(.1);');
   assert.equal(run('foe.hp'), run('before'));
+  run('world.platforms.at(-1).stair=true; bullets=[projectile("player",{x:450,y:targetY},{x:700,y:targetY},10,850)]; updateBullets(.1);');
+  assert.equal(run('foe.hp'),run('before-10'),'player fire passes through open stairs');
+  run('player.x=420;player.y=foe.y;player.invuln=0;player.dodge=0;player.blocking=false;const health=player.hp;bullets=[projectile("enemy",{x:510,y:targetY},{x:400,y:targetY},10,850)];updateBullets(.1);');
+  assert.ok(run('player.hp<health'),'enemy fire also passes through open stairs');
 });
 test('cache is single-use, completion unlocks next stage, and death preserves gear', async () => {
   const { run, click, elements } = await boot();
   run('expedition(1); const box=world.chests.at(-1); player.x=box.x; player.y=box.y; findTarget(); interact();');
   const money = run('profile.gold'); run('interact()'); assert.equal(run('profile.gold'), money);
-  run('player.x=world.portal.x; player.y=GROUND-player.h; findTarget(); interact();'); assert.equal(run('modal'), null);
+  run('player.x=world.portal.x; player.y=world.portal.y-player.h; findTarget(); interact();'); assert.equal(run('modal'), null);
   run('for(const e of world.enemies) { e.hp=1; e.dodge=0; hitEnemy(e,1000); } findTarget(); interact();');
   assert.equal(run('modal'), 'complete'); assert.equal(run('profile.level'), 1);
   elements.get('help-button').onclick(); assert.equal(run('modal'), 'complete'); click('next'); assert.equal(run('world.depth'), 2);

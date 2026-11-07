@@ -2,20 +2,73 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GROUND, BAG_LIMIT, BALANCE, SLOTS, DEFAULT_PROFILE, stats, random, generateLevel, makeItem, loadProfile, addXp, recommendedDepth, enemyReward, trainingCost } from '../src/world.js';
 
-test('200 seeded sectors are finite, have reachable caches and all three enemy roles', () => {
-  for (let seed = 1; seed <= 200; seed++) {
-    const w = generateLevel(1 + seed % 20, seed);
-    assert.ok(w.width < 6000); assert.equal(w.platforms[0].w, w.width);
-    assert.ok(w.portal.x < w.width - 50); assert.ok(w.enemies.length >= 6);
-    assert.equal(new Set(w.enemies.map(e => e.role)).size, 3);
-    assert.equal(w.chests.length, 2);
-    for (const p of w.platforms.slice(1)) { assert.ok(GROUND - p.y < 620 ** 2 / (2 * 1330) - 5); assert.ok(p.x + p.w < w.width); }
-    for (const c of w.chests) assert.ok(w.platforms.some(p => c.x >= p.x && c.x + 34 <= p.x + p.w && c.y + 25 === p.y));
-    for (const e of w.enemies) { assert.ok(e.hp > 0); assert.ok(w.platforms.some(p => p.y === e.y + e.h)); assert.ok(e.x < w.portal.x); }
+function walkableNodes(world) {
+  return world.platforms.flatMap(p=>{
+    const nodes=[];let x=p.x;
+    for(const h of [...(p.holes||[])].sort((a,b)=>a.x-b.x)){if(h.x-x>=20)nodes.push({...p,x,w:h.x-x});x=Math.max(x,h.x+h.w);}
+    if(p.x+p.w-x>=20)nodes.push({...p,x,w:p.x+p.w-x});return nodes;
+  });
+}
+function reachableNodes(w) {
+  const nodes=walkableNodes(w),start=nodes.findIndex(p=>p.ground),seen=new Set([start]),queue=[start];
+  while(queue.length){
+    const p=nodes[queue.shift()];
+    for(let i=0;i<nodes.length;i++){
+      if(seen.has(i))continue;const q=nodes[i],rise=p.y-q.y,gap=Math.max(0,Math.max(p.x,q.x)-Math.min(p.x+p.w,q.x+q.w));
+      const flight=rise<=138?(620+Math.sqrt(620**2-2*1330*rise))/1330:0;
+      let reachable=flight>0&&gap<245*flight-25;
+      if(!reachable)reachable=w.ladders.some(l=>((p.y===l.bottom&&q.y===l.top)||(p.y===l.top&&q.y===l.bottom))&&l.x>=p.x&&l.x<=p.x+p.w&&l.x>=q.x&&l.x<=q.x+q.w);
+      if(reachable){seen.add(i);queue.push(i);}
+    }
   }
-  assert.deepEqual(generateLevel(3, 42), generateLevel(3, 42));
-  assert.notDeepEqual(generateLevel(3, 42), generateLevel(3, 43));
+  return {nodes,seen};
+}
+test('seeded layouts have four themes and reachable enemies, random caches and exits across multiple levels',()=>{
+  const kinds=new Set(),chests=new Set(),exits=new Set();
+  for(let seed=1;seed<=300;seed++){
+    const w=generateLevel(1+seed%20,seed),{nodes,seen}=reachableNodes(w);
+    kinds.add(w.kind);chests.add(w.chests.map(c=>c.x+':'+c.y).join('|'));exits.add(w.portal.x+':'+w.portal.y);
+    assert.ok(w.width<6000);assert.equal(w.platforms[0].w,w.width);assert.ok(w.enemies.length>=6);
+    assert.equal(new Set(w.enemies.map(e=>e.role)).size,3);assert.ok(w.chests.length>=2&&w.chests.length<=3);
+    const reachable=(x,y)=>nodes.some((p,i)=>seen.has(i)&&p.y===y&&x>=p.x&&x<=p.x+p.w);
+    for(const c of w.chests)assert.ok(reachable(c.x+17,c.y+25),w.kind+' cache seed '+seed);
+    for(const e of w.enemies)assert.ok(reachable(e.x+e.w/2,e.y+e.h),w.kind+' enemy seed '+seed);
+    assert.ok(reachable(w.portal.x,w.portal.y),w.kind+' portal seed '+seed);
+    if(w.kind==='megablock'){assert.ok(w.floors.length>=3);assert.ok(w.stairs.length>=2);assert.ok(w.ladders.length>=2);assert.equal(w.portal.y,Math.min(...w.floors));}
+  }
+  assert.equal(kinds.size,4);assert.ok(chests.size>290);assert.ok(exits.size>290);
+  assert.deepEqual(generateLevel(3,42),generateLevel(3,42));assert.notDeepEqual(generateLevel(3,42),generateLevel(3,43));
 });
+test('each location theme supports different layouts at the same difficulty',()=>{
+  for(const kind of ['industrial','port','market','megablock']){
+    const variants=Array.from({length:20},(_,i)=>generateLevel(2,i,kind));
+    assert.ok(variants.every(w=>w.kind===kind));
+    assert.ok(new Set(variants.map(w=>JSON.stringify(w.platforms))).size>=19);
+    assert.ok(new Set(variants.map(w=>JSON.stringify(w.chests))).size>=19);
+  }
+});
+
+test('market upper rooms rest on stalls and street lights always stand on the ground',()=>{
+  let rooms=0;
+  for(let seed=1;seed<=60;seed++){
+    const w=generateLevel(1,seed,'market');
+    assert.ok(w.lamps.length>0);assert.ok(w.lamps.every(l=>l.y===GROUND));
+    assert.ok(!w.decor.some(d=>d.kind==='canopy'&&d.y+d.h<GROUND));
+    for(const d of w.decor.filter(d=>d.kind==='marketUpper')){
+      rooms++;const base=w.platforms.find(p=>p.id===d.supportId);
+      assert.equal(d.y+d.h,base.y);assert.ok(d.x>=base.x&&d.x+d.w<=base.x+base.w);
+      assert.ok(w.decor.some(s=>['foodStall','techStall'].includes(s.kind)&&s.x===base.x&&s.y+s.h===GROUND));
+    }
+  }
+  assert.ok(rooms>60);
+});
+test('megablock uses wall lights on every floor instead of street poles',()=>{
+  for(let seed=1;seed<=30;seed++){
+    const w=generateLevel(1,seed,'megablock');assert.equal(w.lamps.length,0);
+    for(const [floor,y]of w.floors.entries())assert.ok(w.wallLights.some(l=>l.floor===floor&&l.y===y-150));
+  }
+});
+
 test('a full early contract cannot grant a level; XP carries across higher thresholds', () => {
   const p = structuredClone(DEFAULT_PROFILE), w = generateLevel(1, 42);
   const total = 12 + w.enemies.reduce((sum, e) => sum + enemyReward(e, 1).xp, 0);

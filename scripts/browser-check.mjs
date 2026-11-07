@@ -57,7 +57,22 @@ try {
   await send('Page.navigate', { url: `http://127.0.0.1:${port}` });
   await until(() => evaluate("document.getElementById('scene-title')?.textContent.includes('Убежище') && document.getElementById('equipment')?.children.length===3"));
   await evaluate("import('/src/raster.js').then(m=>m.preloadSprites())");
-  if(process.argv.includes('--environment-review')){
+  if(process.argv.includes('--level-review')){
+    await send('Page.navigate',{url:`http://127.0.0.1:${port}/scripts/level-preview.html`});
+    await until(()=>evaluate('window.levelPreviewReady===true'));
+    const layouts=[];
+    for(const kind of ['industrial','port','market','megablock']){
+      const summary=await evaluate(`(()=>{const w=levelPreview.generate(42,'${kind}');return {kind:w.kind,chests:w.chests,floors:w.floors,top:w.top,width:w.width};})()`);
+      assert.equal(summary.kind,kind);layouts.push(summary);
+      await evaluate(`levelPreview.setCamera(450,${kind==='megablock'?-140:0})`);
+      await screenshot('night-city-level-'+kind+'.png');
+      const second=await evaluate(`JSON.stringify(levelPreview.generate(43,'${kind}').platforms)`);
+      const first=await evaluate(`JSON.stringify(levelPreview.generate(42,'${kind}').platforms)`);assert.notEqual(first,second);
+    }
+    await evaluate('const high=levelPreview.generate(17,"megablock");levelPreview.setCamera(high.portal.x-500,high.top)');
+    await screenshot('night-city-level-megablock-top.png');
+    assert.deepEqual(errors,[]);console.log('Level checks passed: four rendered themes, distinct seeded plans and vertical camera; no runtime exceptions.');
+  }else if(process.argv.includes('--environment-review')){
     await send('Page.navigate',{url:`http://127.0.0.1:${port}/scripts/environment-preview.html`});
     await until(()=>evaluate('window.environmentPreviewReady===true'));
     await evaluate('environmentPreview.setTime(0)');
@@ -134,7 +149,16 @@ try {
   await key('KeyD', 'keyup'); await key('KeyE', 'keydown'); await key('KeyE', 'keyup');
   assert.ok(await evaluate("document.querySelector('.modal h2').textContent.includes('Угроза 1')"));
   await click('[data-action="start"]');
-  await until(() => evaluate("document.getElementById('scene-title').textContent.includes('Промзона')"));
+  await until(() => evaluate("document.getElementById('scene-title').textContent.includes('Угроза')"));
+  const navigationFits = async () => {const result=await evaluate(`(()=>{
+    const card=document.getElementById('navigation'),r=card.getBoundingClientRect();
+    const overlaps=b=>r.left<b.right&&r.right>b.left&&r.top<b.bottom&&r.bottom>b.top;
+    return {visible:!card.hidden&&r.width>0,bounds:r.toJSON(),viewport:[innerWidth,innerHeight],inside:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,
+      overlaps:['.character-card','.game-footer','.controls','.combat-readout','.weapon-bar','.topbar'].filter(s=>{const e=document.querySelector(s);return e.getClientRects().length&&overlaps(e.getBoundingClientRect());}),
+      painted:document.getElementById('minimap').getContext('2d').getImageData(0,0,360,168).data.some((v,i)=>i%4===3&&v>0)};
+  })()`);assert.ok(result.visible&&result.inside&&!result.overlaps.length&&result.painted,'minimap fits HUD: '+JSON.stringify({result,errors}));};
+  await delay(50);
+  await navigationFits();
   // Exercise real pointer listeners and a firearm shot.
   await evaluate("const c=document.getElementById('game'), r=c.getBoundingClientRect(); c.dispatchEvent(new PointerEvent('pointermove',{clientX:r.left+r.width*.7,clientY:r.top+r.height*.7,pointerType:'mouse',bubbles:true})); c.dispatchEvent(new PointerEvent('pointerdown',{button:0,clientX:r.left+r.width*.7,clientY:r.top+r.height*.7,pointerType:'mouse',bubbles:true}));");
   await delay(200); await evaluate("window.dispatchEvent(new PointerEvent('pointerup',{button:0}))");
@@ -153,9 +177,10 @@ try {
   await screenshot('neon-sector.png');
   for (const [width,height] of [[1920,1080],[1366,768],[844,390]]) {
     await send('Emulation.setDeviceMetricsOverride', { width,height,deviceScaleFactor:1,mobile:false });
-    await delay(50); await fitsViewport();
+    await delay(50); await fitsViewport(); await navigationFits();
   }
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await delay(50); await navigationFits();
   await click('#inventory-button'); await delay(100); await screenshot('neon-mobile-character.png');
   await fitsViewport();
   assert.ok(await evaluate('Array.from(document.querySelectorAll(".top-actions button")).every(b=>{const r=b.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})'), 'mobile menu buttons remain visible');

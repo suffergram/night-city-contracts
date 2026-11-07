@@ -1,5 +1,7 @@
 import { skillEffects, validateSkills } from './skills.js';
 import { ACTOR_HEIGHT } from './weapons.js';
+import {createLayout,LEVEL_KINDS} from './level-layout.js';
+export {LEVEL_KINDS} from './level-layout.js';
 export const GROUND = 538;
 export const BAG_LIMIT = 24;
 export const SLOTS = { weapon: 'Катана', gun: 'Пистолет', rifle: 'Автомат', shotgun: 'Дробовик', head: 'Голова', torso: 'Куртка', legs: 'Брюки', feet: 'Обувь' };
@@ -69,27 +71,35 @@ export function buyPrice(item) { return itemValue(item) * 4; }
 export function enemyReward(enemy, depth) {
   return { gold: (enemy.role === 'heavy' ? 7 : 4) + Math.floor(depth / 2), xp: (enemy.role === 'heavy' ? 8 : 5) + Math.min(depth, 20) };
 }
-export function generateLevel(depth, seed = Date.now()) {
+let seedCounter=0;
+export function freshLevelSeed() {
+  return globalThis.crypto?.getRandomValues?globalThis.crypto.getRandomValues(new Uint32Array(1))[0]:(Date.now()+Math.imul(++seedCounter,2654435761))>>>0;
+}
+export function generateLevel(depth, seed = freshLevelSeed(), kind) {
   depth = Math.max(1, Math.floor(depth));
-  const rng = random(seed), width = 3400 + Math.min(depth, 12) * 150;
-  const platforms = [{ x: 0, y: GROUND, w: width, h: 150, ground: true }], enemies = [], chests = [];
-  const cacheIndex = 1 + Math.floor(rng() * 5);
-  let index = 0;
-  for (let x = 430; x < width - 420; x += 330 + rng() * 95) {
-    const y = GROUND - 90 - Math.floor(rng() * 35), w = 170 + Math.floor(rng() * 70);
-    platforms.push({ x, y, w, h: 24 });
-    if (index === cacheIndex) chests.push({ x: x + 65, y: y - 25, open: false });
-    const role = ['gunner', 'runner', 'heavy'][index % 3];
+  const rng = random(seed),layout=createLayout(rng,GROUND,kind),enemies=[],chests=[];
+  const shuffle=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
+  const slots=shuffle(layout.slots),selected=[];
+  const enemyCount=7+Math.floor(rng()*3)+Math.min(2,Math.floor(depth/5));
+  for(const floor of shuffle(layout.floors.map((_,i)=>i))){const s=slots.find(s=>s.floor===floor);if(s&&!selected.includes(s))selected.push(s);}
+  for(const s of slots)if(selected.length<enemyCount&&!selected.includes(s))selected.push(s);
+  const roles=shuffle(['gunner','runner','heavy']);
+  for (const [index,s]of selected.entries()) {
+    const role = index<3?roles[index]:roles[Math.floor(rng()*roles.length)];
     const hp = (role === 'heavy' ? 65 : role === 'runner' ? 38 : 42) + depth * 9;
-    const elevated = role === 'gunner' && rng() < .5;
-    enemies.push({ x: x + 70, y: (elevated ? y : GROUND) - ACTOR_HEIGHT, w: role === 'heavy' ? 28 : 22, h: ACTOR_HEIGHT,
+    enemies.push({ x:s.x, y:s.y-ACTOR_HEIGHT, w: role === 'heavy' ? 28 : 22, h: ACTOR_HEIGHT,platformId:s.platformId,
       hp, maxHp: hp, damage: (role === 'heavy' ? 17 : 11) + depth * 2, speed: (role === 'runner' ? 155 : role === 'gunner' ? 95 : 82) + Math.min(depth, 20) * 2,
-      role, vx: 0, vy: 0, grounded: true, home: x + 70, facing: -1, cooldown: .5 + rng(),
+      role, vx: 0, vy: 0, grounded: true, home:s.x, facing:rng()<.5?-1:1, cooldown: .5 + rng(),
       flash: 0, dead: false, state: 'patrol', timer: 0, dodge: 0, dodgeCooldown: 1 + rng(), jumpCooldown: 0, drop: 0, aimX: 0, aimY: 0 });
-    index++;
   }
-  chests.push({ x: width - 330, y: GROUND - 25, open: false });
-  return { depth, seed, width, platforms, enemies, chests, portal: { x: width - 180, y: GROUND }, kills: 0, earned: 0 };
+  const count=rng()<.22?3:2;
+  for(const s of shuffle(slots)){
+    if(chests.length>=count)break;
+    if(chests.some(c=>Math.abs(c.x-s.x)<160&&c.y+25===s.y))continue;
+    chests.push({x:s.x,y:s.y-25,open:false,platformId:s.platformId});
+  }
+  delete layout.slots;
+  return {...layout,depth,seed,enemies,chests,kills:0,earned:0};
 }
 function validItem(item) {
   return item && typeof item.id === 'string' && typeof item.name === 'string' && item.name.length < 80 && Object.hasOwn(SLOTS, item.type) && Number.isInteger(item.power) && item.power >= 0 && item.power < 10000 && [0, 1, 2].includes(item.rarity);

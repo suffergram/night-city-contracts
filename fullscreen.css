@@ -5,3 +5,8 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;overscroll-behavior:no
 @media(pointer:coarse){.game-footer{bottom:auto;top:165px;max-width:48%;background:#150d1a9c}.combat-readout{bottom:138px}.interaction{bottom:145px}}
 @media(max-height:600px){.topbar{top:8px;height:32px}.brand{font-size:18px}.brand-mark{width:28px;height:28px;font-size:20px}.game-toolbar{top:51px}.scene-badge{top:75px}.sidebar{top:53px;width:150px}.hero-summary{display:none}.stat-grid{display:none}.character-card{padding:9px}.section-label{font-size:7px}.bar-label{margin:6px 0 3px}.combat-readout{bottom:93px}.weapon-slot{height:56px}.game-footer{bottom:96px}.toast{top:130px}.interaction{bottom:158px}.touch-controls{bottom:80px}.character-overlay .modal{padding:15px}}
 @media(max-width:600px){.topbar .brand{display:none}.topbar{justify-content:flex-end}.topbar #skills-button{font-size:8px;padding:0 8px;height:29px}.weapon-slot .weapon-art{width:55px;height:24px}}
+.navigation-card{margin-top:10px;padding:10px 12px;border:1px solid #a8425480;background:linear-gradient(120deg,#200d1be6,#080c17e6);pointer-events:none}
+.navigation-card[hidden]{display:none}
+#minimap{display:block;width:100%;height:84px;margin-top:7px;cursor:default}
+@media(max-width:700px){.navigation-card{padding:8px;margin-top:7px}.navigation-card .section-label>span{display:none}#minimap{height:68px;margin-top:4px}}
+@media(max-height:600px){.navigation-card{position:absolute;right:calc(100% + 10px);top:0;width:180px;margin-top:0}#minimap{height:68px}}

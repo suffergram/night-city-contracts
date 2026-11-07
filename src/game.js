@@ -1,6 +1,6 @@
 import { GROUND, BAG_LIMIT, SLOTS, BALANCE, stats, addXp, makeItem, itemValue, buyPrice, generateLevel, loadProfile, recommendedDepth, trainingCost, enemyReward } from './world.js';
-import { center, physics, segmentHit, projectile, incomingDamage, updateEnemies } from './combat.js';
-import { drawWorld } from './render.js';
+import { center, physics, segmentHit, projectile, incomingDamage, updateEnemies,findLadder } from './combat.js';
+import { drawWorld, drawMinimap } from './render.js';
 import { BRANCHES, SKILLS, availablePoints, spentPoints, skillBudget, skillStatus, learnSkill } from './skills.js';
 import { advanceAnimation, animationInfo } from './animation.js';
 import { preloadSprites, previewMarkup, paintPreviews } from './raster.js';
@@ -10,6 +10,7 @@ import { ACTOR_HEIGHT, WEAPONS, weaponSlots, slotForKey } from './weapons.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game'), ctx = canvas.getContext('2d');
+const minimap = $('minimap'), minimapCtx = minimap.getContext('2d'), navigation = $('navigation');
 // Preserve the original storage key when migrating older saves.
 const SAVE_KEY = 'emberfall-save-v1';
 let stored = null;
@@ -20,7 +21,7 @@ const player = { x: 540, y: GROUND - ACTOR_HEIGHT, w: 20, h: ACTOR_HEIGHT, vx: 0
   coyote: 0, jumpBuffer: 0, dodge: 0, dodgeCooldown: 0, guardBreak: 0, blocking: false, regenDelay: 0,
   shotCooldown: 0, fireVisual: 0, reload: 0, ammo: BALANCE.magazine, healCooldown: 0, attackHit: false, activeWeapon: profile.activeWeapon,
   magazines: Object.fromEntries(weaponSlots.filter(slot => WEAPONS[slot].magazine).map(slot => [slot, WEAPONS[slot].magazine])) };
-let mode = 'hub', world, camera = 0, time = 0, modal = null, last = 0, accumulator = 0, hudTimer = 0, previewTime = 0;
+let mode = 'hub', world, camera = 0,cameraY=0, time = 0, modal = null, last = 0, accumulator = 0, hudTimer = 0, previewTime = 0;
 let particles = [], floats = [], bullets = [], shake = 0, toastTimer, stock = [], target = null, bagFilter = 'all';
 const mouse = { active: false, x: 0, y: 0 };
 player.aimAngle = 0;
@@ -51,7 +52,11 @@ function updateHUD() {
   $('ammo-label').textContent = selected.kind === 'melee' ? 'КАТАНА / ЛКМ' : player.reload > 0 ? `ПЕРЕЗАРЯДКА ${player.reload.toFixed(1)}с` : `${player.ammo} / ${selected.magazine} · R`;
   $('weapon-label').textContent = selected.name;
   for (const slot of weaponSlots) $('hot-ammo-' + slot).textContent = WEAPONS[slot].kind === 'melee' ? 'БЛИЖНИЙ БОЙ' : `${slot === player.activeWeapon ? player.ammo : player.magazines[slot]} / ${WEAPONS[slot].magazine}`;
-  $('combat-state').textContent = player.guardBreak > 0 ? 'БЛОК ПРОБИТ' : player.dodge > 0 ? 'УКЛОНЕНИЕ' : player.blocking ? 'БЛОК' : 'БОЕВОЙ ИНТЕРФЕЙС';
+  $('combat-state').textContent = player.climbing!=null?'ЛЕСТНИЦА · W/S · ПРОБЕЛ — СПРЫГНУТЬ':player.guardBreak > 0 ? 'БЛОК ПРОБИТ' : player.dodge > 0 ? 'УКЛОНЕНИЕ' : player.blocking ? 'БЛОК' : 'БОЕВОЙ ИНТЕРФЕЙС';
+  if(mode!=='hub'&&world.kind==='megablock'){
+    const floor=world.floors.reduce((a,y,i)=>Math.abs(y-player.y-player.h)<Math.abs(world.floors[a]-player.y-player.h)?i:a,0);
+    $('world-info').textContent=`Этаж ${floor+1} / ${world.floors.length} · ${world.flavour}`;
+  }
 }
 function renderHotbar() {
   $('weapon-bar').innerHTML = weaponSlots.map(slot => `<button class="weapon-slot ${player.activeWeapon === slot ? 'selected' : ''}" data-weapon="${slot}" aria-label="${WEAPONS[slot].name}" aria-pressed="${player.activeWeapon === slot}"><kbd>${WEAPONS[slot].key}</kbd><span class="weapon-symbol weapon-art ${slot}" aria-hidden="true"></span><strong>${WEAPONS[slot].short}</strong><small id="hot-ammo-${slot}"></small></button>`).join('');
@@ -69,6 +74,8 @@ function useWeapon() {
 }
 function updateUI() {
   const s = stats(profile), hub = mode === 'hub';
+  navigation.hidden = hub || !world.kind;
+  if (!navigation.hidden) drawMinimap(minimapCtx, minimap, world, player);
   renderHotbar(); updateHUD();
   $('level-label').textContent = `· Уровень ${profile.level}`;
   $('xp-text').textContent = `${profile.xp} / ${s.nextXp}`; $('xp-bar').style.width = `${profile.xp / s.nextXp * 100}%`;
@@ -80,12 +87,12 @@ function updateUI() {
     const item = profile.equipment[slot];
     return `<div class="equipment-row"><div class="item-icon ${rarityClasses[item?.rarity || 0]}">${icons[slot]}</div><div><strong>${item ? escape(item.name) : SLOTS[slot] + ' · пусто'}</strong><small>${item ? itemStat(item) : 'Не экипировано'}</small></div></div>`;
   }).join('');
-  $('scene-title').innerHTML = hub ? 'Убежище H10<span> / Уотсон</span>' : `Промзона Уотсона<span> / Угроза ${world.depth}</span>`;
+  $('scene-title').innerHTML = hub ? 'Убежище H10<span> / Уотсон</span>' : `${world.name}<span> / Угроза ${world.depth}</span>`;
   $('scene-subtitle').textContent = hub ? 'Найт-Сити не прощает ошибок. Подготовься к следующему контракту.' : 'Зачисти сектор, забери эдди и доберись до терминала эвакуации.';
   $('expedition-label').textContent = hub ? `Следующий контракт · Угроза ${recommendedDepth(profile)}` : `Угроза ${world.depth} · ${world.kills} / ${world.enemies.length}`;
   $('location-label').textContent = hub ? 'НЕЙТРАЛЬНАЯ ТЕРРИТОРИЯ' : 'ЗОНА КОНФЛИКТА';
-  $('world-info').textContent = hub ? 'Найт-Сити · 02:17 · Сухая ночь' : `Уотсон · Угроза ${world.depth}`;
-  $('scene-icon').textContent = hub ? '⌂' : '⚠'; $('badge-title').textContent = hub ? 'Убежище H10' : 'Промзона';
+  $('world-info').textContent = hub ? 'Найт-Сити · 02:17 · Сухая ночь' : `${world.flavour} · Угроза ${world.depth}`;
+  $('scene-icon').textContent = hub ? '⌂' : '⚠'; $('badge-title').textContent = hub ? 'Убежище H10' : world.name;
   $('badge-subtitle').textContent = hub ? 'Оружейник · Рипер · Контракты' : `Цели: ${world.enemies.length - world.kills}`;
   $('objective').textContent = hub ? `Терминал справа · Следующая угроза: ${recommendedDepth(profile)}` : world.kills === world.enemies.length ? 'Сектор чист. Иди к терминалу эвакуации' : `Нейтрализуй противников: ${world.kills} / ${world.enemies.length}`;
   $('quest-title').textContent = hub ? 'Город сожрёт слабых' : 'Зачистка сектора';
@@ -96,7 +103,7 @@ function updateUI() {
 function resetCombat() {
   Object.assign(player, { vx: 0, vy: 0, grounded: true, invuln: 0, attack: 0, cooldown: 0, jumpBuffer: 0, drop: 0, coyote: 0,
     dodge: 0, dodgeCooldown: 0, blocking: false, guardBreak: 0, regenDelay: 0, shotCooldown: 0, fireVisual: 0, reload: 0,
-    ammo: BALANCE.magazine, stamina: stats(profile).maxStamina, healCooldown: 0, reloadDuration: 0, aimAngle: 0 });
+    ammo: BALANCE.magazine, stamina: stats(profile).maxStamina, healCooldown: 0, reloadDuration: 0, aimAngle: 0,climbing:null,climbIntent:0,ladderCooldown:0 });
   particles = []; floats = []; bullets = []; target = null; mouse.active = false;
   player.animation = { name: 'idle', time: 0 };
   player.magazines = Object.fromEntries(weaponSlots.filter(slot => WEAPONS[slot].magazine).map(slot => [slot, WEAPONS[slot].magazine]));
@@ -107,15 +114,15 @@ function hub() {
   world = { width: 1400, platforms: [{ x: 0, y: GROUND, w: 1400, h: 160, ground: true }], enemies: [], chests: [], portal: { x: 1150, y: GROUND } };
   resetCombat(); Object.assign(player, { x: 565, y: GROUND - player.h, hp: stats(profile).maxHp });
   stock = Object.keys(SLOTS).map(slot => makeItem(recommendedDepth(profile), Math.random, slot));
-  camera = 0; closeModal(); save(); updateUI();
+  camera = 0;cameraY=0; closeModal(); save(); updateUI();
 }
 function expedition(depth = recommendedDepth(profile)) {
   // Explicit next-stage depth can never fall below the character's recorded strength.
   depth = Math.max(depth, recommendedDepth(profile));
   mode = 'expedition'; world = generateLevel(depth); resetCombat();
-  Object.assign(player, { x: 95, y: GROUND - player.h, invuln: 1.2 });
-  camera = 0; closeModal(); save(); updateUI();
-  toast(`Угроза ${depth}. Целей: ${world.enemies.length}. 1–4 — оружие · ЛКМ — атака · ПКМ — блок.`);
+  Object.assign(player, { x:world.spawn.x, y:world.spawn.y-player.h, invuln: 1.2 });
+  camera = Math.max(0,Math.min(world.width-canvas.width,player.x-canvas.width*.38));cameraY=0;closeModal();save();updateUI();
+  toast(`${world.name} · Угроза ${depth} · Целей: ${world.enemies.length}. W/S — лестницы · Пробел — прыжок.`);
 }
 function showModal(title, description, content = '', actions = '', wide = false) {
   keys.clear(); player.vx = 0; player.blocking = false;
@@ -167,7 +174,7 @@ function trainer() {
 function pause() { modal = 'pause'; showModal('Соединение приостановлено', 'Персонаж сохраняется автоматически. Незавершённый контракт после перезагрузки не восстанавливается.', '', button('Продолжить', 'close')); }
 function help() {
   modal = 'help';
-  showModal('Боевой протокол', 'Выбери оружие на 1–4. ЛКМ всегда атакует выбранным. Можно бежать назад, целиться и атаковать на ходу или в прыжке. Катана и блок расходуют выносливость.', `<div class="help-grid"><span><kbd>A</kbd><kbd>D</kbd></span><span>Движение · W / Space — прыжок · S — спуск</span><kbd>1 / 2 / 3 / 4</kbd><span>Катана / пистолет / автомат / дробовик</span><kbd>ЛКМ / J</kbd><span>Атака выбранным оружием · удерживать</span><kbd>ПКМ / K</kbd><span>Блок спереди · наведи мышь на угрозу</span><kbd>Shift</kbd><span>Перекат; в воздухе — с навыком воздушного рывка</span><kbd>R</kbd><span>Перезарядка · отдельные магазины</span><kbd>E / Q</kbd><span>Действие / медгель (+${stats(profile).healing} HP)</span><kbd>B / I / P</kbd><span>Персонаж / рюкзак / способности</span><kbd>⛶ / F11</kbd><span>Полноэкранный режим браузера</span><kbd>Esc</kbd><span>Пауза / закрыть окно</span></div>`, button('Принято', 'close'));
+  showModal('Боевой протокол', 'Выбери оружие на 1–4. ЛКМ всегда атакует выбранным. Можно бежать назад, целиться и атаковать на ходу или в прыжке. Катана и блок расходуют выносливость.', `<div class="help-grid"><span><kbd>A</kbd><kbd>D</kbd></span><span>Движение · Space — прыжок · W/S у лестницы — подъём/спуск</span><kbd>1 / 2 / 3 / 4</kbd><span>Катана / пистолет / автомат / дробовик</span><kbd>ЛКМ / J</kbd><span>Атака выбранным оружием · удерживать</span><kbd>ПКМ / K</kbd><span>Блок спереди · наведи мышь на угрозу</span><kbd>Shift</kbd><span>Перекат; в воздухе — с навыком воздушного рывка</span><kbd>R</kbd><span>Перезарядка · отдельные магазины</span><kbd>E / Q</kbd><span>Действие / медгель (+${stats(profile).healing} HP)</span><kbd>B / I / P</kbd><span>Персонаж / рюкзак / способности</span><kbd>⛶ / F11</kbd><span>Полноэкранный режим браузера</span><kbd>Esc</kbd><span>Пауза / закрыть окно</span></div>`, button('Принято', 'close'));
 }
 function complete() {
   if (modal === 'complete') return;
@@ -259,7 +266,7 @@ function press(key) {
   const slot = slotForKey(key); if (slot) { selectWeapon(slot); return; }
   keys.add(key);
   if (key === 'j') useWeapon();
-  if (key === 'w' || key === ' ') player.jumpBuffer = .14;
+  if (key === 'w'&&!findLadder(player,world,-1) || key === ' ') player.jumpBuffer = .14;
   if (key === 'e') interact(); if (key === 'q') drink(); if (key === 'b' || key === 'i') inventory();
   if (key === 'shift') roll(); if (key === 'r') reload();
 }
@@ -271,7 +278,7 @@ window.addEventListener('keydown', event => {
 });
 window.addEventListener('keyup', event => keys.delete(physicalKeys[event.code]));
 function updateAim() {
-  player.aimAngle = aimAngle(player, mouse.active ? { x: mouse.x + camera, y: mouse.y } : null);
+  player.aimAngle = aimAngle(player, mouse.active ? { x: mouse.x + camera, y: mouse.y+cameraY } : null);
 }
 function aim(event) { const bounds = canvas.getBoundingClientRect(); mouse.x = (event.clientX - bounds.left) * canvas.width / bounds.width; mouse.y = (event.clientY - bounds.top) * canvas.height / bounds.height; mouse.active = true; if (player.dodge <= 0) player.facing = mouse.x + camera >= center(player).x ? 1 : -1; updateAim(); }
 canvas.addEventListener('pointermove', event => { if (event.pointerType !== 'touch' && !modal) aim(event); });
@@ -336,6 +343,7 @@ function slash() {
   for (const e of world.enemies) { const ec = center(e), dx = ec.x - pc.x; if (!e.dead && Math.abs(dx) < 70 && dx * player.facing > -12 && Math.abs(ec.y - pc.y) < 48) hitEnemy(e); }
 }
 function roll() {
+  if(player.climbing!=null)return false;
   if (player.dodgeCooldown > 0 || player.stamina < stats(profile).rollCost || player.guardBreak > 0 || !player.grounded && !stats(profile).perks.airDash) return false;
   const direction = (keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0);
   player.rollDir = direction || player.facing; player.dodge = .32; player.dodgeCooldown = .85;
@@ -370,7 +378,7 @@ function updateBullets(dt) {
     if (b.life <= 0) continue;
     const nx = b.x + b.vx * dt, ny = b.y + b.vy * dt;
     let first = null, firstT = Infinity;
-    for (const platform of world.platforms) { const t = segmentHit(b.x, b.y, nx, ny, platform); if (t !== null && t < firstT) { firstT = t; first = { platform }; } }
+    for (const platform of world.platforms) { if(platform.stair)continue; const t = segmentHit(b.x, b.y, nx, ny, platform); if (t !== null && t < firstT) { firstT = t; first = { platform }; } }
     const actors = b.owner === 'player' ? world.enemies.filter(e => !e.dead && e.dodge <= 0) : [player];
     for (const actor of actors) { const t = segmentHit(b.x, b.y, nx, ny, actor, 2); if (t !== null && t < firstT) { firstT = t; first = { actor }; } }
     if (first) {
@@ -394,8 +402,13 @@ function update(dt) {
   if (p.dodge > 0) { p.vx = p.rollDir * 560; p.facing = p.rollDir; }
   if (p.blocking) { p.stamina = Math.max(0, p.stamina - 10 * stats(profile).blockCostMultiplier * dt); p.regenDelay = .3; }
   else if (!p.regenDelay) p.stamina = Math.min(stats(profile).maxStamina, p.stamina + stats(profile).staminaRegen * dt);
-  if (keys.has('s') && p.grounded && p.y + p.h < GROUND - 5) { p.drop = .24; p.grounded = false; p.y += 5; p.coyote = 0; }
-  if (p.jumpBuffer > 0 && p.coyote > 0 && p.dodge <= 0) { p.vy = -620; p.grounded = false; p.jumpBuffer = 0; p.coyote = 0; }
+  const climbDirection=(keys.has('s')?1:0)-(keys.has('w')?1:0);
+  p.climbIntent=(p.climbing!=null||findLadder(p,world,climbDirection))?climbDirection:0;
+  if(p.climbIntent)p.drop=0;
+  if (keys.has('s')&&!p.climbIntent&&p.grounded && p.y + p.h < GROUND - 5) { p.drop = .24; p.grounded = false; p.y += 5; p.coyote = 0; }
+  if (p.jumpBuffer > 0 && (p.coyote > 0||p.climbing!=null) && p.dodge <= 0) {
+    p.vy = -620;p.grounded = false;p.jumpBuffer = 0;p.coyote = 0;p.climbing=null;p.climbIntent=0;p.ladderCooldown=.3;
+  }
   updateAim();
   if (keys.has('j')) useWeapon();
   physics(p, world, dt);
@@ -404,6 +417,7 @@ function update(dt) {
   if (p.attack > 0 && p.attack < .32 - animationInfo(p).contactAt && !p.attackHit) { p.attackHit = true; slash(); }
   updateBullets(dt); if (terminal()) return;
   camera += (Math.max(0, Math.min(world.width - canvas.width, p.x - canvas.width * .38)) - camera) * Math.min(1, dt * 7);
+  cameraY+=(Math.max(world.top||0,Math.min(0,p.y-canvas.height*.48))-cameraY)*Math.min(1,dt*7);
   updateAim();
   shake = Math.max(0, shake - dt);
   for (const particle of particles) { particle.x += particle.vx * dt; particle.y += particle.vy * dt; particle.vy += 300 * dt; particle.life -= dt; }
@@ -415,13 +429,17 @@ function update(dt) {
   findTarget();
 }
 function findTarget() {
-  const candidates = [{ kind: 'portal', x: world.portal.x, y: GROUND - 30, label: mode === 'hub' ? `Контракт · Угроза ${recommendedDepth(profile)}` : world.kills === world.enemies.length ? 'Эвакуация / Следующий сектор' : 'Терминал заблокирован' }];
+  const candidates = [{ kind: 'portal', x: world.portal.x, y: world.portal.y - 30, label: mode === 'hub' ? `Контракт · Угроза ${recommendedDepth(profile)}` : world.kills === world.enemies.length ? 'Эвакуация / Следующий сектор' : 'Терминал заблокирован' }];
   if (mode === 'hub') candidates.push({ kind: 'merchant', x: 325, y: GROUND - 30, label: 'Мира · Оружейник' }, { kind: 'trainer', x: 800, y: GROUND - 30, label: 'Орин · Рипер' }, { kind: 'medbay', x: 580, y: GROUND - 15, label: 'Медстанция · Восстановление' });
   for (const c of world.chests) if (!c.open) candidates.push({ kind: 'chest', x: c.x, y: c.y, label: 'Вскрыть тайник', object: c });
   target = candidates.filter(t => Math.abs(t.x - center(player).x) < 77 && Math.abs(t.y - center(player).y) < 65).sort((a, b) => Math.abs(a.x - player.x) - Math.abs(b.x - player.x))[0];
   $('interaction').classList.toggle('hidden', !target); if (target) $('interaction').innerHTML = `<kbd>E</kbd> ${target.label}`;
 }
-function render() { drawWorld(ctx, canvas, { mode, world, player, profile, camera, time, particles, floats, bullets, shake, mouse }); }
+function render() {
+  drawWorld(ctx, canvas, { mode, world, player, profile, camera,cameraY, time, particles, floats, bullets, shake, mouse });
+  navigation.hidden = mode === 'hub' || !world.kind;
+  if (!navigation.hidden) drawMinimap(minimapCtx, minimap, world, player);
+}
 function resize() { const bounds = canvas.parentElement.getBoundingClientRect(); canvas.width = Math.round(660 * bounds.width / bounds.height); canvas.height = 660; camera = Math.max(0, Math.min(world.width - canvas.width, player.x - canvas.width * .38)); }
 function frame(now) {
   const elapsed = Math.min((now - last) / 1000 || 0, .05); last = now;
