@@ -115,6 +115,13 @@ test('swept player bullets damage enemies and cover intercepts them', async () =
   run('player.x=420;player.y=foe.y;player.invuln=0;player.dodge=0;player.blocking=false;const health=player.hp;bullets=[projectile("enemy",{x:510,y:targetY},{x:400,y:targetY},10,850)];updateBullets(.1);');
   assert.ok(run('player.hp<health'),'enemy fire also passes through open stairs');
 });
+
+test('bullets damage heavy armour without pushing or interrupting its advance',async()=>{
+  const {run}=await boot();
+  run('expedition(1);const tank=world.enemies.find(e=>e.role==="heavy");tank.x=600;tank.y=GROUND-tank.h;tank.vx=-tank.speed;tank.state="chase";tank.facing=-1;const initialHp=tank.hp;hitEnemy(tank,20,500,true);');
+  assert.equal(run('tank.x'),600);assert.ok(run('tank.hp<initialHp'));
+  assert.equal(run('tank.vx'),run('-tank.speed'));assert.equal(run('tank.state'),'chase');
+});
 test('cache is single-use, completion unlocks next stage, and death preserves gear', async () => {
   const { run, click, elements } = await boot();
   run('expedition(1); const box=world.chests.at(-1); player.x=box.x; player.y=box.y; findTarget(); interact();');

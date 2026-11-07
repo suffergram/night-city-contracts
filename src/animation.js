@@ -49,11 +49,13 @@ const enemyClips = base => ({
 export const ENEMY_CLIPS = { gunner: enemyClips(0), runner: enemyClips(12), heavy: enemyClips(24) };
 ENEMY_CLIPS.heavy.attack = { frames: [28, 29, 33, 24], duration: .65 };
 ENEMY_CLIPS.heavy.shoot = { frames: [34, 35, 34], duration: .72 };
+ENEMY_CLIPS.gunner.shoot.duration = .46;
+ENEMY_CLIPS.runner.attack.duration = .62;
 
 export function animationState(actor, role = 'hero') {
   const hero = role === 'hero', moving = Math.abs(actor.vx || 0) > 8, air = actor.grounded === false;
   const back = actor.vx * actor.facing < 0, ranged = actor.activeWeapon && actor.activeWeapon !== 'weapon';
-  if (actor.dodge > 0) return 'roll';
+  if (actor.dodge > 0) return !hero&&actor.evadeKind==='hop'?'jump':'roll';
   if (actor.blocking) return 'block';
   if (actor.attack > 0) return hero ? air ? 'jumpAttack' : moving ? back ? 'backAttack' : 'runAttack' : 'attack' : 'attack';
   if (actor.state === 'windup' || actor.state === 'recover') return role === 'gunner' ? 'shoot' : 'attack';

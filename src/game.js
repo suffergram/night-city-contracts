@@ -312,7 +312,8 @@ function hitEnemy(enemy, raw = stats(profile).damage, sourceX = center(player).x
   const perks = stats(profile).perks;
   const bonus = (enemy.role === 'heavy' ? perks.breach || 0 : 0) + (enemy.state === 'recover' ? perks.exploit || 0 : 0) + (ranged && enemy.hp / enemy.maxHp < .35 ? perks.execution || 0 : 0);
   const damage = Math.max(1, Math.round(raw * (1 + bonus) * (guarded ? .5 : ranged && enemy.role === 'heavy' ? .8 : 1)));
-  enemy.hp -= damage; enemy.flash = .12; enemy.x = Math.max(20, Math.min(world.width - 60, enemy.x + Math.sign(enemy.x - sourceX) * 5));
+  enemy.hp -= damage; enemy.flash = .12;
+  if(!(ranged&&enemy.role==='heavy'))enemy.x = Math.max(20, Math.min(world.width - 60, enemy.x + Math.sign(enemy.x - sourceX) * 5));
   float(guarded ? `${damage} БРОНЯ` : damage, enemy.x, enemy.y - 12); burst(enemy.x + 15, enemy.y + 15, '#fb736b');
   if (enemy.hp <= 0) {
     enemy.dead = true; world.kills++;

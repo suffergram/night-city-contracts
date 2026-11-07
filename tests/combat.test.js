@@ -125,3 +125,54 @@ test('heavy melee has a readable windup and can be evaded before impact', () => 
   p.x -= 180; for (let i = 0; i < 70; i++) updateEnemies(w, p, [], .01, raw => damage += raw);
   assert.equal(damage, 0); assert.equal(e.state, 'recover');
 });
+
+test('heavy tanks advance through incoming fire and hit at the extended melee reach',()=>{
+  const w=flat(),p=player(),e=enemy('heavy',p.x+82);w.enemies=[e];
+  assert.ok(e.maxHp>=208);
+  const bullet=projectile('player',{x:e.x-80,y:e.y+25},{x:e.x+100,y:e.y+25},10,850);
+  e.cooldown=1;updateEnemies(w,p,[bullet],.01,()=>{});
+  assert.equal(e.dodge,0);assert.ok(e.vx<0);
+  e.cooldown=0;updateEnemies(w,p,[],.01,()=>{});assert.equal(e.state,'windup');
+  let damage=0;for(let i=0;i<70;i++)updateEnemies(w,p,[],.01,n=>damage+=n);
+  assert.ok(damage>0);
+});
+
+test('gunners fire after a short readable aim and can interrupt aiming to dodge',()=>{
+  const w=flat(),p=player(),e=enemy('gunner',1100),shots=[];w.enemies=[e];
+  updateEnemies(w,p,shots,.01,()=>{});assert.equal(e.state,'windup');
+  assert.ok(e.timer>=.2&&e.timer<=.25);
+  for(let i=0;i<24;i++)updateEnemies(w,p,shots,.01,()=>{});
+  assert.equal(shots.length,1);
+  e.state='windup';e.timer=.2;e.dodgeCooldown=0;
+  const b=projectile('player',{x:e.x-100,y:e.y+30},{x:e.x+100,y:e.y+30},10,850);
+  updateEnemies(w,p,[b],.01,()=>{});assert.equal(e.state,'evade');assert.ok(e.vx>0);
+  const cooldown=e.dodgeCooldown;assert.ok(cooldown<1.5);
+  e.dodge=0;updateEnemies(w,p,[b],.01,()=>{});assert.equal(e.dodge,0);
+  e.dodgeCooldown=0;updateEnemies(w,p,[b],.01,()=>{});assert.ok(e.dodge>0);
+});
+
+test('runners roll and hop toward the hero under fire from either side',()=>{
+  for(const start of [1000,400]){
+  const w=flat(),p=player(),e=enemy('runner',start);w.enemies=[e];const toward=Math.sign(p.x-e.x);
+  assert.ok(e.speed>200);updateEnemies(w,p,[],.01,()=>{});
+  assert.equal(e.evadeKind,'advance');assert.ok(e.vx*toward>400);assert.ok(e.dashCooldown>1);
+  e.dodge=0;e.dodgeCooldown=0;
+  const b=projectile('player',{x:e.x+toward*110,y:e.y+25},{x:e.x-toward*150,y:e.y+25},10,850);
+  const distance=Math.abs(center(e).x-center(p).x);
+  updateEnemies(w,p,[b],.01,()=>{});
+  assert.equal(e.evadeKind,'hop');assert.ok(e.vy<0);assert.ok(e.vx*toward>0);
+  assert.ok(Math.abs(center(e).x-center(p).x)<distance,'bullet evasion must close the distance');
+  assert.ok(e.dodgeCooldown<1.1);
+  }
+});
+
+test('evasion ignores passing bullets and cannot roll or retreat off an elevated ledge',()=>{
+  const w=flat(),p=player(),e=enemy('gunner',980);w.enemies=[e];e.cooldown=1;
+  const miss=projectile('player',{x:900,y:e.y-100},{x:1200,y:e.y-100},10,850);
+  updateEnemies(w,p,[miss],.01,()=>{});assert.equal(e.dodge,0);
+  w.platforms.push({x:950,y:GROUND-100,w:90,h:18});
+  e.x=1000;e.y=GROUND-100-e.h;e.grounded=true;e.state='chase';e.dodgeCooldown=0;
+  p.x=900;p.y=GROUND-100-p.h;
+  updateEnemies(w,p,[],.01,()=>{});
+  assert.equal(e.dodge,0);assert.equal(e.vx,0);assert.equal(e.y+e.h,GROUND-100);
+});

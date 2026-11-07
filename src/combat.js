@@ -135,49 +135,88 @@ export function incomingDamage(player, raw, sourceX, armor) {
   }
   return { damage: Math.round(base), blocked: false };
 }
+export const ENEMY_TACTICS = {
+  heavy: { reach:84,hitReach:98,windup:.65,recover:.75,cooldown:.8 },
+  gunner: { windup:.22,recover:.24,cooldown:.85,dodgeCooldown:1.2,dodgeSpeed:340,dodgeTime:.24 },
+  runner: { reach:68,hitReach:80,windup:.3,recover:.32,cooldown:.55,dodgeCooldown:.95,dodgeSpeed:360,dodgeTime:.26,dashCooldown:1.65,dashSpeed:440 },
+};
+function incomingBullet(actor,bullets){
+  return bullets.some(b=>b.owner==='player'&&b.life>0&&segmentHit(b.x,b.y,b.x+b.vx*Math.min(.28,b.life),b.y+b.vy*Math.min(.28,b.life),actor,8)!==null);
+}
+// Commit to a dodge only when its whole path stays on the current walkway.
+function safeDodge(world,actor,direction,speed,duration){
+  const feet=actor.y+actor.h,cx=center(actor).x,end=cx+direction*speed*duration;
+  if(end<actor.w/2+20||end>world.width-actor.w/2-20)return false;
+  for(let t=0;t<=1;t+=1/12){
+    const x=cx+(end-cx)*t;
+    if(!world.platforms.some(p=>!p.stair&&Math.abs(p.y-feet)<3&&x>p.x+actor.w/2&&x<p.x+p.w-actor.w/2&&!p.holes?.some(h=>x>h.x-actor.w/2&&x<h.x+h.w+actor.w/2)))return false;
+  }
+  return true;
+}
 export function updateEnemies(world, player, bullets, dt, damagePlayer) {
   const pc = center(player);
   for (const e of world.enemies) {
     if (e.dead) continue;
-    for (const field of ['cooldown', 'flash', 'dodge', 'dodgeCooldown', 'jumpCooldown', 'drop','routeCooldown']) e[field] = Math.max(0, (e[field]||0) - dt);
+    const tactics=ENEMY_TACTICS[e.role];
+    for (const field of ['cooldown', 'flash', 'dodge', 'dodgeCooldown', 'dashCooldown', 'jumpCooldown', 'drop','routeCooldown']) e[field] = Math.max(0, (e[field]||0) - dt);
     const ec = center(e), dx = pc.x - ec.x, dy = pc.y - ec.y, distance = Math.abs(dx);
-    const aggro = distance < 600 && Math.abs(dy) < 430;
+    const aggro = distance < (e.role==='gunner'?740:650) && Math.abs(dy) < 430;
+    const bulletDanger=e.role!=='heavy'&&incomingBullet(e,bullets);
+    const slashDanger=distance<120&&Math.abs(dy)<65&&player.attack>.18&&dx*player.facing<12;
+    const tooClose=e.role==='gunner'&&distance<175&&Math.abs(dy)<65;
+    if(aggro&&e.role!=='heavy'&&e.grounded&&e.climbing==null&&e.dodge<=0&&e.dodgeCooldown<=0&&(bulletDanger||slashDanger||tooClose)){
+      const away=-Math.sign(dx)||e.facing;
+      const forwardHop=e.role==='runner'&&bulletDanger;
+      const preferred=forwardHop?-away:away;
+      const direction=safeDodge(world,e,preferred,tactics.dodgeSpeed,tactics.dodgeTime)?preferred:
+        !forwardHop&&bulletDanger&&!tooClose&&safeDodge(world,e,-preferred,tactics.dodgeSpeed,tactics.dodgeTime)?-preferred:0;
+      if(direction){
+        e.dodge=tactics.dodgeTime;e.dodgeCooldown=tactics.dodgeCooldown;e.vx=direction*tactics.dodgeSpeed;e.state='evade';e.evadeKind='retreat';e.timer=0;
+        // Bullet evasion closes on the hero; blade evasion remains defensive.
+        if(e.role==='runner'&&bulletDanger){e.vy=-330;e.grounded=false;e.evadeKind='hop';}
+      }
+    }
     if((aggro||e.route)&&!['windup','recover'].includes(e.state)&&!(e.dodge>0)&&followConnection(e,player,world,dt)){
       physics(e,world,dt,e.route?.connection.kind==='stairs'&&e.route.phase==='traverse'?e.route.connection.id:null);continue;
     }
     e.climbIntent=0;
-    if (e.state === 'windup') {
+    if (e.dodge > 0) {
+      e.state='evade';
+    } else if (e.state === 'windup') {
       e.vx = 0; e.timer -= dt;
+      if(e.role==='gunner'&&e.timer>.09){e.facing=Math.sign(dx)||e.facing;e.aimX=pc.x+player.vx*.1;e.aimY=pc.y;}
       if (e.timer <= 0) {
         if (e.role === 'gunner') bullets.push(projectile('enemy', { x: ec.x + e.facing * 20, y: ec.y - 4 }, { x: e.aimX, y: e.aimY }, e.damage, 430 + Math.min(world.depth, 20) * 5));
-        else if (distance < (e.role === 'heavy' ? 82 : 64) && Math.abs(dy) < 55 && dx * e.facing > -10) damagePlayer(e.damage, ec.x);
-        e.state = 'recover'; e.timer = e.role === 'heavy' ? .85 : .5; e.cooldown = e.role === 'gunner' ? 1.3 : .7;
+        else if (distance < tactics.hitReach && Math.abs(dy) < 55 && dx * e.facing > -10) damagePlayer(e.damage, ec.x);
+        e.state = 'recover'; e.timer = tactics.recover; e.cooldown = tactics.cooldown;
       }
     } else if (e.state === 'recover') {
       e.vx = 0; e.timer -= dt; if (e.timer <= 0) e.state = 'chase';
-    } else if (e.dodge > 0) {
-      e.state = 'evade';
     } else {
       e.state = aggro ? 'chase' : 'patrol';
       if (aggro) {
         e.facing = Math.sign(dx) || e.facing;
         e.vx = e.facing * e.speed;
-        if (e.role === 'gunner') e.vx = distance < 185 ? -e.facing * e.speed : distance < 300 ? 0 : e.vx;
-        const danger = e.role !== 'heavy' && e.dodgeCooldown <= 0 && e.grounded &&
-          ((distance < 110 && player.attack > .18) || bullets.some(b => b.owner === 'player' && Math.abs(b.x - ec.x) < 135 && Math.abs(b.y - ec.y) < 35 && (ec.x - b.x) * b.vx > 0));
-        if (danger) {
-          e.dodge = .24; e.dodgeCooldown = e.role === 'runner' ? 3 : 4.5; e.vx = -e.facing * 370; e.state = 'evade';
-        } else {
-          const canShoot = e.role === 'gunner' && distance < 530 && distance > 80 && lineOfSight(world, { x: ec.x, y: ec.y - 4 }, pc);
-          const canSlash = e.role !== 'gunner' && distance < (e.role === 'heavy' ? 70 : 55) && Math.abs(dy) < 48;
+        if (e.role === 'gunner') e.vx = distance < 280 ? -e.facing * e.speed : distance < 460 ? 0 : e.vx;
+        const trapped=e.role==='gunner'&&e.grounded&&e.vx*e.facing<0&&!safeDodge(world,e,-e.facing,e.speed,.2);
+        if(trapped)e.vx=0;
+        {
+          const canShoot = e.role === 'gunner' && distance < 680 && distance > (trapped?65:175) && lineOfSight(world, { x: ec.x, y: ec.y - 4 }, pc);
+          const canSlash = e.role !== 'gunner' && distance < tactics.reach && Math.abs(dy) < 48;
           if (e.cooldown <= 0 && (canShoot || canSlash)) {
-            e.state = 'windup'; e.timer = e.role === 'heavy' ? .65 : e.role === 'gunner' ? .72 : .36; e.vx = 0;
+            e.state = 'windup'; e.timer = tactics.windup; e.vx = 0;
             e.aimX = pc.x + player.vx * .12; e.aimY = pc.y;
+          }
+        }
+        if(e.role==='runner'&&e.state==='chase'&&e.grounded&&Math.abs(dy)<40&&distance>140&&distance<390&&e.dashCooldown<=0&&e.dodgeCooldown<=0&&!bulletDanger){
+          const duration=Math.min(.28,(distance-70)/tactics.dashSpeed);
+          if(safeDodge(world,e,e.facing,tactics.dashSpeed,duration)){
+            e.dodge=duration;e.dashCooldown=tactics.dashCooldown;e.dodgeCooldown=.5;e.vx=e.facing*tactics.dashSpeed;e.state='evade';e.evadeKind='advance';
           }
         }
         if (e.state === 'chase' && e.grounded && e.jumpCooldown <= 0) {
           const step = world.platforms.find(p => !p.ground && !p.stair && p.y < e.y + e.h - 10 && e.y + e.h - p.y < 140 && ec.x > p.x - 100 && ec.x < p.x + p.w + 100 && pc.x > p.x - 80 && pc.x < p.x + p.w + 80);
-          if ((dy < -45 && distance < 240 && step) || (e.role === 'runner' && distance > 95 && distance < 185)) {
+          if (dy < -45 && distance < 240 && step) {
             e.vy = -620; e.grounded = false; e.jumpCooldown = e.role === 'runner' ? 2.3 : 3;
             if (step && dy < -45) e.vx = Math.sign(step.x + step.w / 2 - ec.x) * e.speed;
           }

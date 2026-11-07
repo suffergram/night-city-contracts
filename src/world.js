@@ -86,9 +86,9 @@ export function generateLevel(depth, seed = freshLevelSeed(), kind) {
   const roles=shuffle(['gunner','runner','heavy']);
   for (const [index,s]of selected.entries()) {
     const role = index<3?roles[index]:roles[Math.floor(rng()*roles.length)];
-    const hp = (role === 'heavy' ? 65 : role === 'runner' ? 38 : 42) + depth * 9;
+    const hp = (role === 'heavy' ? 190 : role === 'runner' ? 38 : 42) + depth * (role === 'heavy' ? 18 : 9);
     enemies.push({ x:s.x, y:s.y-ACTOR_HEIGHT, w: role === 'heavy' ? 28 : 22, h: ACTOR_HEIGHT,platformId:s.platformId,
-      hp, maxHp: hp, damage: (role === 'heavy' ? 17 : 11) + depth * 2, speed: (role === 'runner' ? 155 : role === 'gunner' ? 95 : 82) + Math.min(depth, 20) * 2,
+      hp, maxHp: hp, damage: (role === 'heavy' ? 17 : 11) + depth * 2, speed: (role === 'runner' ? 210 : role === 'gunner' ? 115 : 82) + Math.min(depth, 20) * 2,
       role, vx: 0, vy: 0, grounded: true, home:s.x, facing:rng()<.5?-1:1, cooldown: .5 + rng(),
       flash: 0, dead: false, state: 'patrol', timer: 0, dodge: 0, dodgeCooldown: 1 + rng(), jumpCooldown: 0, drop: 0, aimX: 0, aimY: 0 });
   }
