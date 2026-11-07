@@ -214,6 +214,19 @@ try {
   assert.ok(runReview.compared>100000);
   await writeFile(path.join(root,'artifacts','night-city-source-run-comparison.png'),Buffer.from(runReview.png,'base64'));
   assert.deepEqual(runReview.mismatches,[]);
+  const pistolReview=await evaluate(`(async()=>{
+    const {drawRasterActor}=await import('/src/raster.js');const {DEFAULT_PROFILE}=await import('/src/world.js');
+    const c=document.createElement('canvas');c.width=2200;c.height=600;const x=c.getContext('2d');
+    x.fillStyle='#10121e';x.fillRect(0,0,c.width,c.height);
+    const angles=[-90,-60,-45,-30,-15,0,15,30,45,60,90];
+    for(let row=0;row<2;row++)angles.forEach((deg,col)=>{
+      x.fillStyle='#efb0c2';x.font='13px monospace';x.fillText((row?'RUN':'STAND')+' PISTOL '+deg+' deg',col*200+12,row*300+20);
+      x.save();x.translate(col*200+100,row*300+285);
+      drawRasterActor(x,{grounded:true,vx:row?245:0,facing:1,activeWeapon:'gun',aimAngle:deg*Math.PI/180,strideTime:.1,fireVisual:0},'hero',DEFAULT_PROFILE.equipment,{height:210});
+      x.restore();
+    });return c.toDataURL('image/png').split(',')[1];
+  })()`);
+  await writeFile(path.join(root,'artifacts','night-city-pistol-arm-scale.png'),Buffer.from(pistolReview,'base64'));
   assert.deepEqual(errors, []);
   console.log(process.argv.includes('--run-review')?'Run review passed: whole body frames rendered without a waist splice.':'Browser checks passed: raster atlases, equipment, skills, portal, combat, mobile layout and whole run frames; no runtime exceptions.');
   console.log('Screenshots: artifacts/neon-*.png');

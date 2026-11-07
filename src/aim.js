@@ -48,7 +48,9 @@ export function aimGeometry(actor, height = spriteHeight(actor)) {
   const row = { gun: 0, rifle: 12, shotgun: 24 }[actor.activeWeapon] || 0;
   const pose = poseIndex >= 0 ? AIM_POSE_DATA[actor.activeWeapon || 'gun'][poseIndex] : null;
   // Match sleeve/shoulder thickness to the horizontal arm layer, not total weapon bounds.
-  const sourcePivot = pose?.pivot || ARM_PIVOT, scale = pose ? .62 : ARM_SCALE;
+  const sourcePivot = pose?.pivot || ARM_PIVOT;
+  // The horizontal pistol artwork has larger arms than the other authored poses.
+  const scale = pose ? .62 : actor.activeWeapon==='gun' ? .55 : ARM_SCALE;
   const rotation = angle - (pose?.degrees || 0) * Math.PI / 180;
   const socket = bodyPivot(actor);
   const pivot = { x: box.x + box.w * socket[0], y: box.y + box.h * socket[1] };
