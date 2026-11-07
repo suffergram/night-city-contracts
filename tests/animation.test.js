@@ -1,9 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { HERO_CLIPS, ENEMY_CLIPS, LONG_GUN_CLIPS, advanceAnimation, animationFrame, animationState, animationInfo, atlasCell } from '../src/animation.js';
+import { HERO_CLIPS, ENEMY_CLIPS, LONG_GUN_CLIPS, advanceAnimation, animationFrame, animationState, animationInfo, atlasCell,runStep } from '../src/animation.js';
 import { muzzlePosition, ACTOR_HEIGHT } from '../src/weapons.js';
 import { SPRITES } from '../src/raster.js';
+
+test('katana, aiming and shooting share a complete six-phase run without restarting the step',()=>{
+  for(const back of [false,true])for(let phase=0;phase<6;phase++){
+    const actor={vx:back?-196:245,facing:1,grounded:true,strideTime:(phase+.1)/(back?12:13),animation:{name:'idle',time:0}};
+    for(const activeWeapon of ['weapon','gun','rifle','shotgun'])for(const fireVisual of [0,.18]){
+      Object.assign(actor,{activeWeapon,fireVisual});
+      assert.equal(runStep(actor),phase);
+      const clip=HERO_CLIPS[animationState(actor)];assert.equal(clip.frames.length,6);
+      assert.equal(animationFrame(actor),clip.frames[phase]);
+    }
+  }
+});
 
 test('running plays six distinct poses and changing action resets local animation time', () => {
   const actor = { vx: 245, vy: 0, grounded: true };

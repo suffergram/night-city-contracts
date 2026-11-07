@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AIM_STEP, AIM_GUNS, aimAngle, aimOrigin, aimGeometry, aimedMuzzle, canAim, aimBodyFrame } from '../src/aim.js';
+import { AIM_STEP, AIM_GUNS, aimAngle, aimOrigin, aimGeometry, aimedMuzzle, canAim, aimBodyFrame,aimBodySheet } from '../src/aim.js';
 
 const hero = () => ({ x: 120, y: 200, w: 20, h: 54, facing: 1, activeWeapon: 'gun', grounded: true, vx: 0, vy: 0, aimAngle: 0 });
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-8, `${a} ≈ ${b}`);
+
+test('forward aim uses whole redrawn bodies; idle, backward and airborne use their original bodies',()=>{
+  const actor={...hero(),vx:245};
+  for(let phase=0;phase<6;phase++){
+    actor.strideTime=(phase+.1)/13;assert.equal(aimBodySheet(actor),phase===4?'aimRunContact':phase===5?'aimRunFix':'aimRun');assert.equal(aimBodyFrame(actor),12+phase);
+  }
+  for(const state of [{vx:0},{vx:-196},{grounded:false}])assert.equal(aimBodySheet({...actor,...state}),'aimRig');
+});
 
 test('cursor chooses thirteen 15-degree elevations, mirrored left without flipping up/down', () => {
   for (const facing of [-1, 1]) for (let sector = -6; sector <= 6; sector++) {
@@ -59,7 +67,7 @@ test('steep and downward aiming use bent-elbow poses with small rotation correct
 test('aim rig combines locomotion with hands and yields to reloads, katana, blocking and dodge', () => {
   const actor = hero();
   assert.ok(canAim(actor)); assert.ok(aimBodyFrame(actor) < 6);
-  actor.vx = 200; assert.equal(aimBodyFrame(actor), 6);
+  actor.vx = 200; assert.equal(aimBodyFrame(actor), 12);
   actor.vx = -200; assert.equal(aimBodyFrame(actor), 12);
   actor.grounded = false; actor.vy = -400; assert.equal(aimBodyFrame(actor), 19);
   actor.vy = 300; assert.equal(aimBodyFrame(actor), 22);

@@ -1,7 +1,7 @@
 // Frame selection uses actor-local time. Pausing freezes animations; a new action starts at frame 0.
 export const HERO_CLIPS = {
   idle: { frames: [0, 1, 2, 3, 4, 5], fps: 5, loop: true },
-  run: { frames: [6, 7, 8, 9, 10, 11], fps: 13, loop: true },
+  run: { sheet:'run', frames: [12, 13, 14, 15, 16, 17], fps: 13, loop: true },
   jump: { frames: [12, 13, 14, 15, 16, 17], fps: 9 },
   land: { frames: [17, 12], fps: 13 },
   roll: { frames: [18, 19, 20, 21, 22, 23], duration: .32 },
@@ -17,8 +17,8 @@ export const HERO_CLIPS = {
   backAttack: { sheet: 'utility', frames: [0, 1, 2, 3, 4, 5], duration: .32, contactAt: .21 },
   runShoot: { sheet: 'actions', frames: [12, 13, 14, 15, 16, 17], fps: 13, loop: true, muzzle: [.87, .32] },
   backShoot: { sheet: 'actions', frames: [18, 19, 20, 21, 22, 23], fps: 12, loop: true, muzzle: [.87, .32] },
-  runAim: { sheet: 'actions', frames: [12, 14, 15, 17], fps: 10, loop: true, muzzle: [.87, .32] },
-  backAim: { sheet: 'actions', frames: [18, 20, 21, 23], fps: 10, loop: true, muzzle: [.87, .32] },
+  runAim: { sheet: 'actions', frames: [12, 13, 14, 15, 16, 17], fps: 13, loop: true, muzzle: [.87, .32] },
+  backAim: { sheet: 'actions', frames: [18, 19, 20, 21, 22, 23], fps: 12, loop: true, muzzle: [.87, .32] },
   jumpAttack: { sheet: 'actions', frames: [24, 25, 26, 27, 28, 29], duration: .32 },
   jumpShoot: { sheet: 'actions', frames: [30, 31, 32, 33, 34, 35], fps: 12, loop: true, muzzle: [.86, .31] },
   jumpAim: { sheet: 'utility', frames: [30, 31, 32, 33, 34, 35], fps: 7, muzzle: [.86, .31] },
@@ -87,6 +87,7 @@ export function advanceAnimation(actor, dt, role = 'hero') {
 }
 export function animationFrame(actor, role = 'hero') {
   const { name, time, clip } = activeClip(actor, role);
+  if(role==='hero'&&['run','runBack','runAim','backAim','runShoot','backShoot'].includes(name))return clip.frames[runStep(actor)];
   if (role === 'hero' && ['attack','runAttack','backAttack','jumpAttack'].includes(name)) {
     const progress = Math.max(0, Math.min(1, 1 - actor.attack / .32));
     return clip.frames[Math.min(clip.frames.length - 1, Math.floor(progress * clip.frames.length))];
@@ -109,6 +110,11 @@ export function animationFrame(actor, role = 'hero') {
   let index = Math.floor(clock * fps);
   index = clip.loop ? index % clip.frames.length : Math.min(index, clip.frames.length - 1);
   return clip.frames[index];
+}
+
+// One complete source cycle for moving with a katana, aiming or firing.
+export function runStep(actor) {
+  return Math.floor((actor.strideTime||0)*(actor.vx*actor.facing<0?12:13)+1e-9)%6;
 }
 export function atlasCell(index, width, height, columns = 6, rows = 6) {
   if (!Number.isInteger(index) || index < 0 || index >= columns * rows) throw new RangeError('Invalid sprite frame');

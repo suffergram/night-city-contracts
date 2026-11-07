@@ -57,6 +57,7 @@ try {
   await send('Page.navigate', { url: `http://127.0.0.1:${port}` });
   await until(() => evaluate("document.getElementById('scene-title')?.textContent.includes('Убежище') && document.getElementById('equipment')?.children.length===3"));
   await evaluate("import('/src/raster.js').then(m=>m.preloadSprites())");
+  if(!process.argv.includes('--run-review')){
   assert.ok(await evaluate("(async()=>{const {drawRasterActor}=await import('/src/raster.js');const {DEFAULT_PROFILE}=await import('/src/world.js');const paint=gear=>{const c=document.createElement('canvas');c.width=240;c.height=240;const x=c.getContext('2d');x.translate(120,235);drawRasterActor(x,{},'hero',gear,{sheet:'hero',frame:0,height:220});return x.getImageData(0,0,240,240).data;};const base=structuredClone(DEFAULT_PROFILE.equipment),a=paint(base);const same=(b,rect)=>{const [left,top,w,h]=rect;for(let y=top;y<top+h;y++)for(let x=left;x<left+w;x++)for(let k=0;k<4;k++){const i=(y*240+x)*4+k;if(a[i]!==b[i])return false;}return true;};for(const slot of ['torso','legs','feet','head']){const gear=structuredClone(base);gear[slot]={id:'material-regression-'+slot,name:'test',rarity:2};const b=paint(gear);if(!same(b,[168,140,70,55]))throw Error(slot+' blade');if(slot!=='head'&&!same(b,[113,8,38,35]))throw Error(slot+' face');if(!same(b,[65,104,17,22]))throw Error(slot+' arm');if(slot==='head'&&!same(b,[114,54,37,26]))throw Error(slot+' collar');if(!a.some((v,i)=>v!==b[i]))throw Error(slot+' unchanged');}return true;})()"), 'equipment changes preserve katana, face, cyberarm and collar pixels in the inventory preview');
   assert.ok(await evaluate("(async()=>{const {drawRasterActor}=await import('/src/raster.js');const {DEFAULT_PROFILE}=await import('/src/world.js');const base=structuredClone(DEFAULT_PROFILE.equipment),changed=structuredClone(base);for(const slot of ['head','legs','feet'])changed[slot]={id:'different-'+slot,name:'test',rarity:2};const paint=(sheet,frame,gear)=>{const c=document.createElement('canvas');c.width=240;c.height=240;const x=c.getContext('2d');x.translate(120,235);drawRasterActor(x,{},'hero',gear,{sheet,frame,height:220});return x.getImageData(0,0,240,240).data;};for(const [sheet,frames]of [['aimExtremes',[0,12,24]],['aimRig',[24,26,28]]])for(const frame of frames){const a=paint(sheet,frame,base),b=paint(sheet,frame,changed);if(a.some((v,i)=>v!==b[i]))return false;const jacket=structuredClone(base);jacket.torso=null;const d=paint(sheet,frame,jacket);if(!a.some((v,i)=>v!==d[i]))return false;}return true;})()"), 'arm materials follow the jacket and are unaffected by helmet, trousers or boots');
   assert.ok(await evaluate("import('/src/raster.js').then(m=>Object.values(m.spriteDiagnostics()).every(s=>s.loaded&&s.width>=1000))"));
@@ -97,6 +98,7 @@ try {
   await key('Digit2','keydown');await key('Digit2','keyup');
   await evaluate("(()=>{const c=document.getElementById('game'),r=c.getBoundingClientRect();c.dispatchEvent(new PointerEvent('pointerdown',{button:0,pointerType:'mouse',clientX:r.left+r.width*.95,clientY:r.top+r.height*.55,bubbles:true}));window.dispatchEvent(new PointerEvent('pointerup',{button:0}));})()");
   await key('KeyR','keydown');await key('KeyR','keyup');
+  await until(()=>evaluate("document.getElementById('ammo-label').textContent.includes('ПЕРЕЗАРЯДКА')"));
   await key('KeyD','keydown');await delay(140);await key('KeyD','keyup');
   assert.ok(await evaluate("document.getElementById('ammo-label').textContent.includes('ПЕРЕЗАРЯДКА')"));
   await key('KeyA','keydown');await delay(140);await key('KeyW','keydown');await key('KeyW','keyup');
@@ -167,8 +169,53 @@ try {
   await writeFile(path.join(root,'artifacts','night-city-equipment-aim.png'),Buffer.from(outfitGallery,'base64'));
   const clothingGallery = await evaluate("(async()=>{const {drawRasterActor}=await import('/src/raster.js');const {DEFAULT_PROFILE}=await import('/src/world.js');const c=document.createElement('canvas');c.width=1440;c.height=1440;const x=c.getContext('2d');x.fillStyle='#10121e';x.fillRect(0,0,c.width,c.height);const cols=['DEFAULT','JACKET','TROUSERS','BOOTS','HEAD','ALL'];const states=[['IDLE','hero',0],['RUN','hero',8],['AIR','hero',14],['ROLL','hero',20],['KATANA','hero',27],['RELOAD','utility',6]];states.forEach(([label,sheet,frame],row)=>{x.fillStyle='#f4aabc';x.font='14px monospace';x.fillText(label,10,row*240+20);cols.forEach((name,col)=>{const gear=structuredClone(DEFAULT_PROFILE.equipment);for(const [i,slot]of ['torso','legs','feet','head'].entries())if(col===i+1||col===5)gear[slot]={id:'material-regression-'+slot,name:'test',rarity:2};x.save();x.translate(120+col*240,row*240+230);drawRasterActor(x,{},'hero',gear,{sheet,frame,height:180});x.restore();x.fillStyle='#a6adbc';x.font='12px monospace';x.fillText(name,col*240+70,row*240+38);});});return c.toDataURL('image/png').split(',')[1];})()");
   await writeFile(path.join(root,'artifacts','night-city-clothing-masks.png'),Buffer.from(clothingGallery,'base64'));
+  }
+  const runReview=await evaluate(`(async()=>{
+    const {drawRasterActor,SPRITES}=await import('/src/raster.js');
+    const {DEFAULT_PROFILE}=await import('/src/world.js');
+    const {spriteGeometry}=await import('/src/weapons.js');
+    const {aimBodyFrame,aimBodySheet}=await import('/src/aim.js');
+    const image=new Image();image.src=SPRITES.actions;await image.decode();
+    const bodies={};for(const key of ['aimRun','aimRunFix','aimRunContact','aimRig']){bodies[key]=new Image();bodies[key].src=SPRITES[key];await bodies[key].decode();}
+    const cell=image.width/6,canvas=document.createElement('canvas');canvas.width=1440;canvas.height=1440;
+    const ctx=canvas.getContext('2d');ctx.fillStyle='#10121e';ctx.fillRect(0,0,1440,1440);
+    let compared=0;const mismatches=[];
+    for(let row=0;row<6;row++)for(let phase=0;phase<6;phase++){
+      const back=row>=3,kind=row%3,slot=kind===2?'weapon':'gun',sourceFrame=(back?18:12)+phase;
+      const a={grounded:true,vx:back?-196:245,facing:1,activeWeapon:slot,aimAngle:0,fireVisual:0,strideTime:(phase+.01)/(back?12:13)};
+      ctx.fillStyle='#f5afc1';ctx.font='12px monospace';ctx.fillText((back?'BACK':'RUN')+' / '+['SOURCE','AIMED','KATANA'][kind]+' / '+phase,phase*240+10,row*240+18);
+      ctx.save();ctx.translate(phase*240+120,row*240+230);
+      const box=spriteGeometry(185);
+      if(kind===0)ctx.drawImage(image,phase*cell,(back?3:2)*cell,cell,cell,box.x,box.y,box.w,box.h);
+      else drawRasterActor(ctx,a,'hero',DEFAULT_PROFILE.equipment,{height:185});
+      ctx.restore();
+      if(kind===1){
+        // The rendered torso/pelvis/legs must come from one whole body frame, without a waist splice.
+        const actual=document.createElement('canvas'),expected=document.createElement('canvas');
+        actual.width=expected.width=cell;actual.height=expected.height=cell;
+        const x=actual.getContext('2d'),e=expected.getContext('2d'),b=spriteGeometry(cell*.94);
+        x.translate(-b.x,-b.y);drawRasterActor(x,a,'hero',undefined,{height:cell*.94,bodyOnly:true});
+        const body=bodies[aimBodySheet(a)],single=aimBodySheet(a)==='aimRunContact';
+        const frame=single?0:aimBodyFrame(a),cw=body.width/(single?1:6),ch=body.height/(single?1:6);
+        const width=['aimRun','aimRunFix'].includes(aimBodySheet(a))?.90:1;
+        if(single){e.translate(cell*.44*.07,cell*.98*.07);e.scale(.93,.93);}
+        e.imageSmoothingQuality='high';e.drawImage(body,frame%6*cw,Math.floor(frame/6)*ch,cw*width,ch,0,0,cell*width,cell);
+        const p=x.getImageData(0,0,cell,cell).data,q=e.getImageData(0,0,cell,cell).data;
+        for(let y=0;y<cell;y++)for(let xx=0;xx<cell;xx++){
+          const i=(y*cell+xx)*4;
+          // Canvas rounds premultiplied edge colours on each intermediate draw.
+          if((Math.abs(p[i+3]-q[i+3])>1||[0,1,2].some(k=>Math.abs(p[i+k]*p[i+3]-q[i+k]*q[i+3])/255>3))&&mismatches.length<10)mismatches.push({sourceFrame,xx,y});
+          compared++;
+        }
+      }
+    }
+    return {png:canvas.toDataURL('image/png').split(',')[1],compared,mismatches};
+  })()`);
+  assert.ok(runReview.compared>100000);
+  await writeFile(path.join(root,'artifacts','night-city-source-run-comparison.png'),Buffer.from(runReview.png,'base64'));
+  assert.deepEqual(runReview.mismatches,[]);
   assert.deepEqual(errors, []);
-  console.log('Browser checks passed: raster atlases loaded, painted portrait, equipment, 5 skill branches / 20 perks, portal, melee, shooting and mobile layout; no runtime exceptions.');
+  console.log(process.argv.includes('--run-review')?'Run review passed: whole body frames rendered without a waist splice.':'Browser checks passed: raster atlases, equipment, skills, portal, combat, mobile layout and whole run frames; no runtime exceptions.');
   console.log('Screenshots: artifacts/neon-*.png');
 } finally {
   socket?.close(); browser?.kill(); server.kill();

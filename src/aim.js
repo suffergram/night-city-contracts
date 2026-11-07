@@ -1,5 +1,6 @@
 import { spriteGeometry, spriteHeight, WEAPONS } from './weapons.js';
 import { AIM_POSE_DATA } from './aim-pose-data.js';
+import {runStep} from './animation.js';
 
 export const AIM_STEP_DEGREES = 15;
 export const AIM_STEP = AIM_STEP_DEGREES * Math.PI / 180;
@@ -10,6 +11,7 @@ const BODY_PIVOTS = [
   [.43,.29],[.45,.29],[.45,.27],[.46,.28],[.46,.29],[.47,.28],
   [.40,.47],[.44,.39],[.46,.26],[.49,.21],[.45,.38],[.41,.47],
 ];
+const RUN_BODY_PIVOTS = [[.44,.30],[.43,.31],[.42,.30],[.43,.30],[.46,.32],[.43,.30]];
 const ARM_PIVOT = [.20,.36], ARM_SCALE = .65;
 export const AIM_MUZZLES = { gun: [.90,.36], rifle: [.97,.36], shotgun: [.96,.36] };
 // A single firearm drawing and physical size are shared by every aiming pose.
@@ -25,7 +27,7 @@ export function canAim(actor) {
 
 export function aimOrigin(actor) {
   const box = spriteGeometry(spriteHeight(actor));
-  const pivot = BODY_PIVOTS[aimBodyFrame(actor)];
+  const pivot = bodyPivot(actor);
   return { x: actor.x + actor.w / 2 + (box.x + box.w * pivot[0]) * actor.facing,
     y: actor.y + actor.h + box.y + box.h * pivot[1] };
 }
@@ -48,7 +50,7 @@ export function aimGeometry(actor, height = spriteHeight(actor)) {
   // Match sleeve/shoulder thickness to the horizontal arm layer, not total weapon bounds.
   const sourcePivot = pose?.pivot || ARM_PIVOT, scale = pose ? .62 : ARM_SCALE;
   const rotation = angle - (pose?.degrees || 0) * Math.PI / 180;
-  const socket = BODY_PIVOTS[aimBodyFrame(actor)];
+  const socket = bodyPivot(actor);
   const pivot = { x: box.x + box.w * socket[0], y: box.y + box.h * socket[1] };
   const arms = { x: pivot.x - box.w * scale * sourcePivot[0], y: pivot.y - box.h * scale * sourcePivot[1],
     w: box.w * scale, h: box.h * scale };
@@ -79,8 +81,16 @@ export function aimedMuzzle(actor) {
 }
 
 export function aimBodyFrame(actor) {
+  if(aimBodySheet(actor).startsWith('aimRun'))return 12+runStep(actor);
   if (actor.grounded === false) return 18 + (actor.vy < -250 ? 1 : actor.vy < -30 ? 2 : actor.vy < 150 ? 3 : 4);
   if (actor.animation?.name === 'land') return 23;
-  if (Math.abs(actor.vx || 0) > 8) return (actor.vx * actor.facing < 0 ? 12 : 6) + Math.floor((actor.strideTime || 0) * 12) % 6;
+  if (Math.abs(actor.vx || 0) > 8) return (actor.vx * actor.facing < 0 ? 12 : 6) + runStep(actor);
   return Math.floor((actor.animation?.time || 0) * 5) % 6;
+}
+function bodyPivot(actor) {
+  return aimBodySheet(actor).startsWith('aimRun')?RUN_BODY_PIVOTS[runStep(actor)]:BODY_PIVOTS[aimBodyFrame(actor)];
+}
+export function aimBodySheet(actor) {
+  if(actor.grounded!==false&&Math.abs(actor.vx||0)>8&&actor.vx*(actor.facing||1)>0&&actor.animation?.name!=='land')return runStep(actor)===4?'aimRunContact':runStep(actor)===5?'aimRunFix':'aimRun';
+  return 'aimRig';
 }

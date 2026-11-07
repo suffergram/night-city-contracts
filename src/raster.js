@@ -1,10 +1,14 @@
 import { animationFrame, animationInfo, atlasCell } from './animation.js';
 import { appearance } from './character.js';
 import { spriteGeometry } from './weapons.js';
-import { canAim, aimBodyFrame, aimGeometry } from './aim.js';
+import { canAim, aimBodyFrame, aimBodySheet, aimGeometry } from './aim.js';
 import { materialPose, materialAt, tintLeather } from './material-masks.js';
 
 export const SPRITES = {
+  run: new URL('../assets/characters/mercenary-run-redraw-v2.png', import.meta.url).href,
+  aimRun: new URL('../assets/characters/mercenary-aim-run-redraw-v2.png', import.meta.url).href,
+  aimRunFix: new URL('../assets/characters/mercenary-aim-run-redraw-v3.png', import.meta.url).href,
+  aimRunContact: new URL('../assets/characters/mercenary-aim-run-contact-v4.png', import.meta.url).href,
   hero: new URL('../assets/characters/mercenary-clean-v1.png', import.meta.url).href,
   enemies: new URL('../assets/characters/enemies-clean-v1.png', import.meta.url).href,
   actions: new URL('../assets/characters/mercenary-actions-v1.png', import.meta.url).href,
@@ -22,7 +26,16 @@ let preloadPromise;
 function loadSheet(key, url) {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.onload = () => { sheets.set(key, { image, width: image.naturalWidth, height: image.naturalHeight }); resolve(); };
+    image.onload = () => {
+      if(key==='aimRunContact'){
+        // Pack the standalone corrected pose into its own slot; no body parts are combined.
+        const cell=209,atlas=document.createElement('canvas');atlas.width=atlas.height=cell*6;
+        const c=atlas.getContext('2d'),scale=.93;c.imageSmoothingQuality='high';
+        c.drawImage(image,cell*(4+.44*(1-scale)),cell*(2+.98*(1-scale)),cell*scale,cell*scale);
+        sheets.set(key,{image:atlas,width:atlas.width,height:atlas.height});
+      }else sheets.set(key, { image, width: image.naturalWidth, height: image.naturalHeight });
+      resolve();
+    };
     image.onerror = () => reject(new Error(`Cannot load ${url}`)); image.src = url;
   });
 }
@@ -67,7 +80,8 @@ function weaponPart(slot) {
 const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 function sourceMaterialMask(sheetName,data,width,height) {
   if(materialMasks.has(sheetName)) return materialMasks.get(sheetName);
-  const cellW=width/6,cellH=height/6,poses=Array.from({length:36},(_,frame)=>materialPose(sheetName,frame));
+  const cellW=width/6,cellH=height/6,poses=Array.from({length:36},(_,frame)=>sheetName==='run'||sheetName.startsWith('aimRun')
+    ?materialPose(sheetName==='run'?'hero':'aimRig',6+frame%6):materialPose(sheetName,frame));
   const ids=new Uint8Array(width*height),histogram=new Uint32Array(36*256),counts=new Uint32Array(36),median=new Float32Array(36);
   for(let y=0;y<height;y++) for(let x=0;x<width;x++) {
     const p=y*width+x,i=p*4;if(data[i+3]<30)continue;
@@ -137,7 +151,10 @@ export function drawRasterActor(ctx, actor, role, equipment, options = {}) {
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
   if (options.alpha !== undefined) ctx.globalAlpha *= options.alpha;
   // Fixed bottom-center anchor prevents action frames from drifting with weapon bounds.
-  ctx.drawImage(source, cell.x + 2, cell.y + 2, cell.w - 4, cell.h - 4, box.x, box.y, box.w, box.h);
+  // The redraw has stray tips from the next cell in its unused right gutter.
+  // Crop only that gutter; retain the whole figure's size and bottom-centre registration.
+  if(sheetName==='run')ctx.drawImage(source,cell.x,cell.y,cell.w*.90,cell.h,box.x,box.y,box.w*.90,box.h);
+  else ctx.drawImage(source, cell.x + 2, cell.y + 2, cell.w - 4, cell.h - 4, box.x, box.y, box.w, box.h);
   const longGun = hero && ['rifle','shotgun'].includes(actor.activeWeapon) && info.sheet !== 'longgunUtility' && !['roll','block'].includes(info.name) && info.name !== 'attack';
   if (longGun) {
     const part = weaponPart(actor.activeWeapon);
@@ -154,12 +171,15 @@ function drawAimedActor(ctx, actor, equipment, options) {
   const rig = aimGeometry(actor, options.height || 104), box = rig.box;
   const draw = (frame, destination = box, material = source, atlas = sheet) => {
     const cell = atlasCell(frame, atlas.width, atlas.height);
-    ctx.drawImage(material, cell.x, cell.y, cell.w, cell.h, destination.x, destination.y, destination.w, destination.h);
+    const width=(atlas===sheets.get('aimRun')||atlas===sheets.get('aimRunFix'))?.90:1;
+    ctx.drawImage(material, cell.x, cell.y, cell.w*width, cell.h, destination.x, destination.y, destination.w*width, destination.h);
   };
   ctx.save();
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
   if (options.alpha !== undefined) ctx.globalAlpha *= options.alpha;
-  draw(aimBodyFrame(actor));
+  const bodySheet=aimBodySheet(actor);
+  draw(aimBodyFrame(actor),box,heroMaterial(equipment,bodySheet),sheets.get(bodySheet));
+  if(options.bodyOnly){ctx.restore();return true;}
   const part = weaponPart(actor.activeWeapon), gun = rig.weapon;
   if (part) {
     ctx.save(); ctx.translate(gun.grip.x, gun.grip.y); ctx.rotate(gun.angle);
