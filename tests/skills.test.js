@@ -21,8 +21,8 @@ test('all 20 skill effects are defined and alter actual character stats', () => 
   for (const [id, skill] of Object.entries(SKILLS)) for (let n = 0; n < skill.max; n++) assert.ok(learnSkill(p, id));
   const after = stats(p), perks = skillEffects(p);
   assert.equal(Object.keys(SKILLS).length, 20);
-  assert.equal(after.maxHp - before.maxHp, 24); assert.equal(after.damage - before.damage, 9);
-  assert.equal(after.gunDamage - before.gunDamage, 9); assert.equal(after.armor - before.armor, 6);
+  assert.equal(after.maxHp - before.maxHp, 24); assert.equal(after.damage - before.damage, 22);
+  assert.equal(after.gunDamage - before.gunDamage, 22); assert.equal(after.armor - before.armor, 6);
   assert.equal(after.maxStamina - before.maxStamina, 20); assert.equal(after.staminaRegen, 32);
   assert.equal(after.rollCost, 20); assert.equal(after.meleeCost, 6); assert.equal(after.healing, 61);
   assert.equal(after.reloadTime, 1.1); assert.equal(perks.airDash, 1); assert.equal(perks.scanner, 1);

@@ -5,7 +5,7 @@ import { drawRasterActor } from './raster.js';
 import { drawRasterBackdrop, drawRasterEnvironment, HUMAN_SCALE } from './environment.js';
 import { ACTOR_HEIGHT, spriteHeight, WEAPONS } from './weapons.js';
 import { animationInfo } from './animation.js';
-import { canAim, aimedMuzzle, aimGeometry } from './aim.js';
+import { canAim, aimedMuzzle, aimDirection } from './aim.js';
 import {findLadder} from './combat.js';
 
 export function drawWorld(ctx, canvas, state) {
@@ -50,8 +50,8 @@ export function drawWorld(ctx, canvas, state) {
   actor(p.x, p.y, p.facing, 'hero', p);
   if(mode!=='hub'&&(p.climbing!=null||findLadder(p,world)))text('W / S · ЛЕСТНИЦА',p.x+p.w/2,p.y-16,8,'#a5f4e4');
   if (mouse.active && canAim(p)) {
-    const tip = aimedMuzzle(p), direction = aimGeometry(p).direction;
-    const distance = Math.hypot(mouse.x + camera - tip.x, mouse.y+cameraY - tip.y);
+    const tip = aimedMuzzle(p), direction = aimDirection(p,{x:mouse.x+camera,y:mouse.y+cameraY});
+    const distance = Math.min(WEAPONS[p.activeWeapon].range,Math.hypot(mouse.x + camera - tip.x, mouse.y+cameraY - tip.y));
     const end = { x: tip.x + direction.x * distance, y: tip.y + direction.y * distance };
     line(tip.x + direction.x * 5, tip.y + direction.y * 5, end.x, end.y, '#f7ef5525');
     ellipse(end.x, end.y, 1.8, 1.8, '#f7ef55');
@@ -74,7 +74,7 @@ export function drawWorld(ctx, canvas, state) {
     if (actorState.flash > 0) ctx.filter = 'brightness(1.7)';
     if (!drawRasterActor(ctx, body, type, hero ? profile.equipment : null, { height })) drawMercenary(ctx, -height * .28, -height, height * 260 / 440, height, hero ? profile.equipment : null, { role: type, pose: 'idle' });
     if (hero && p.blocking) line(22, -43, 26, -14, '#6de8e6a0', 2);
-    if (hero && p.attack > 0 && p.attack < .35 - animationInfo(p).contactAt && WEAPONS[p.activeWeapon]?.kind === 'melee' && profile.equipment.weapon) { ctx.strokeStyle = '#c3eaf188'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.arc(7, -32, 56, -.8, 1); ctx.stroke(); }
+    if (hero && p.attack > 0 && p.attack < WEAPONS.weapon.duration - animationInfo(p).contactAt && WEAPONS[p.activeWeapon]?.kind === 'melee' && profile.equipment.weapon) { ctx.strokeStyle = '#c3eaf188'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.arc(7, -32, WEAPONS.weapon.reach*.8, -.8, 1); ctx.stroke(); }
     ctx.restore();
   }
 }

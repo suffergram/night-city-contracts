@@ -1,12 +1,12 @@
 import { GROUND, BAG_LIMIT, SLOTS, BALANCE, stats, addXp, makeItem, itemValue, buyPrice, generateLevel, loadProfile, recommendedDepth, trainingCost, enemyReward } from './world.js';
-import { center, physics, segmentHit, projectile, incomingDamage, updateEnemies,findLadder } from './combat.js';
+import { center, physics, segmentHit, projectile, projectileStep, projectileDamage, incomingDamage, updateEnemies,findLadder } from './combat.js';
 import { drawWorld, drawMinimap } from './render.js';
 import { BRANCHES, SKILLS, availablePoints, spentPoints, skillBudget, skillStatus, learnSkill } from './skills.js';
 import { advanceAnimation, animationInfo } from './animation.js';
 import { preloadSprites, previewMarkup, paintPreviews } from './raster.js';
-import { aimAngle, aimedMuzzle, aimGeometry } from './aim.js';
+import { aimAngle, aimedMuzzle, aimDirection } from './aim.js';
 import { preloadEnvironment } from './environment.js';
-import { ACTOR_HEIGHT, WEAPONS, weaponSlots, slotForKey } from './weapons.js';
+import { ACTOR_HEIGHT, WEAPONS, weaponSlots, slotForKey, rifleSpread, coolRifle, fireInterval } from './weapons.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game'), ctx = canvas.getContext('2d');
@@ -31,7 +31,10 @@ const escape = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;
 const button = (label, action, secondary = false, disabled = false) => `<button class="button${secondary ? ' secondary' : ''}" data-action="${action}" ${disabled ? 'disabled' : ''}>${label}</button>`;
 const terminal = () => ['death', 'complete'].includes(modal);
 const characterTabs = active => `<nav class="character-tabs" aria-label="Меню персонажа">${button('01 / СНАРЯЖЕНИЕ', 'inventory', active !== 'inventory')}${button(`02 / СПОСОБНОСТИ [${availablePoints(profile)}]`, 'skills', active !== 'skills')}</nav>`;
-const itemStat = item => `${item.power} ${weaponSlots.includes(item.type) ? 'урона' : 'брони'}`;
+const damageStats={weapon:'damage',gun:'gunDamage',rifle:'rifleDamage',shotgun:'shotgunDamage'};
+const itemDamage = item => stats({...profile,equipment:{...profile.equipment,[item.type]:item}})[damageStats[item.type]];
+const itemStat = item => !weaponSlots.includes(item.type)?`${item.power} брони`:
+  `${itemDamage(item)}${item.type==='shotgun'?' × 5 дробин':item.type==='weapon'?' за удар':' за выстрел'}`;
 
 function save() {
   profile.threat = recommendedDepth(profile);
@@ -50,7 +53,7 @@ function updateHUD() {
   $('stamina-bar').style.width = `${player.stamina / s.maxStamina * 100}%`;
   const selected = WEAPONS[player.activeWeapon];
   $('ammo-label').textContent = selected.kind === 'melee' ? 'КАТАНА / ЛКМ' : player.reload > 0 ? `ПЕРЕЗАРЯДКА ${player.reload.toFixed(1)}с` : `${player.ammo} / ${selected.magazine} · R`;
-  $('weapon-label').textContent = selected.name;
+  $('weapon-label').textContent = `${selected.name} · ${s[damageStats[player.activeWeapon]]}${player.activeWeapon==='shotgun'?' × 5':''} урона`;
   for (const slot of weaponSlots) $('hot-ammo-' + slot).textContent = WEAPONS[slot].kind === 'melee' ? 'БЛИЖНИЙ БОЙ' : `${slot === player.activeWeapon ? player.ammo : player.magazines[slot]} / ${WEAPONS[slot].magazine}`;
   $('combat-state').textContent = player.climbing!=null?'ЛЕСТНИЦА · W/S · ПРОБЕЛ — СПРЫГНУТЬ':player.guardBreak > 0 ? 'БЛОК ПРОБИТ' : player.dodge > 0 ? 'УКЛОНЕНИЕ' : player.blocking ? 'БЛОК' : 'БОЕВОЙ ИНТЕРФЕЙС';
   if(mode!=='hub'&&world.kind==='megablock'){
@@ -103,7 +106,7 @@ function updateUI() {
 function resetCombat() {
   Object.assign(player, { vx: 0, vy: 0, grounded: true, invuln: 0, attack: 0, cooldown: 0, jumpBuffer: 0, drop: 0, coyote: 0,
     dodge: 0, dodgeCooldown: 0, blocking: false, guardBreak: 0, regenDelay: 0, shotCooldown: 0, fireVisual: 0, reload: 0,
-    ammo: BALANCE.magazine, stamina: stats(profile).maxStamina, healCooldown: 0, reloadDuration: 0, aimAngle: 0,climbing:null,climbIntent:0,ladderCooldown:0 });
+    ammo: BALANCE.magazine, stamina: stats(profile).maxStamina, healCooldown: 0, reloadDuration: 0, aimAngle: 0,climbing:null,climbIntent:0,ladderCooldown:0,rifleHeat:0,rifleRest:0 });
   particles = []; floats = []; bullets = []; target = null; mouse.active = false;
   player.animation = { name: 'idle', time: 0 };
   player.magazines = Object.fromEntries(weaponSlots.filter(slot => WEAPONS[slot].magazine).map(slot => [slot, WEAPONS[slot].magazine]));
@@ -142,7 +145,7 @@ function inventory() {
   const rows = profile.bag.map((item, i) => {
     const weapon = weaponSlots.includes(item.type);
     if (bagFilter === 'weapons' && !weapon || bagFilter === 'clothes' && weapon) return '';
-    const delta = item.power - (profile.equipment[item.type]?.power || 0);
+    const delta = weaponSlots.includes(item.type)?itemDamage(item)-stats(profile)[damageStats[item.type]]:item.power-(profile.equipment[item.type]?.power||0);
     return `<div class="shop-row"><span class="item-icon ${rarityClasses[item.rarity]}">${icons[item.type]}</span><div class="item-copy"><strong>${escape(item.name)}</strong><small>${SLOTS[item.type]} · ${itemStat(item)} <b class="${delta >= 0 ? 'positive' : 'negative'}">(${delta >= 0 ? '+' : ''}${delta})</b></small><small>${rarityNames[item.rarity]}</small></div>${button('Надеть', `equip:${i}`)}${mode === 'hub' ? button(`${itemValue(item)} €$`, `sell:${i}`, true) : ''}</div>`;
   }).join('');
   const schematic = previewMarkup(profile.equipment);
@@ -337,11 +340,17 @@ function damagePlayer(raw, sourceX) {
 }
 function attack() {
   if (player.cooldown > 0 || player.dodge > 0 || player.blocking || player.reload > 0 || player.stamina < stats(profile).meleeCost) return false;
-  player.attack = .32; player.cooldown = .5; player.attackHit = false; player.stamina -= stats(profile).meleeCost; player.regenDelay = .4; return true;
+  player.attack = WEAPONS.weapon.duration; player.cooldown = WEAPONS.weapon.interval; player.attackHit = false; player.stamina -= stats(profile).meleeCost; player.regenDelay = .4; return true;
 }
 function slash() {
   const pc = center(player);
-  for (const e of world.enemies) { const ec = center(e), dx = ec.x - pc.x; if (!e.dead && Math.abs(dx) < 70 && dx * player.facing > -12 && Math.abs(ec.y - pc.y) < 48) hitEnemy(e); }
+  for (const e of world.enemies) {
+    if(e.dead)continue;
+    const ec=center(e),dx=ec.x-pc.x;
+    const bodyContact=player.x<=e.x+e.w&&player.x+player.w>=e.x&&player.y<e.y+e.h&&player.y+player.h>e.y;
+    const inSwing=Math.abs(dx)<WEAPONS.weapon.reach&&dx*player.facing> -12&&Math.abs(ec.y-pc.y)<48;
+    if(bodyContact||inSwing)hitEnemy(e);
+  }
 }
 function roll() {
   if(player.climbing!=null)return false;
@@ -363,35 +372,40 @@ function shoot() {
   updateAim();
   const from = aimedMuzzle(player);
   const damage = stats(profile)[player.activeWeapon === 'rifle' ? 'rifleDamage' : player.activeWeapon === 'shotgun' ? 'shotgunDamage' : 'gunDamage'];
-  const direction = aimGeometry(player).direction;
+  const direction = aimDirection(player,mouse.active?{x:mouse.x+camera,y:mouse.y+cameraY}:null);
   const angle = Math.atan2(direction.y, direction.x);
   for (let pellet = 0; pellet < cfg.pellets; pellet++) {
-    const spread = cfg.pellets > 1 ? (pellet / (cfg.pellets - 1) * 2 - 1) * cfg.spread : (Math.random() - .5) * cfg.spread;
-    bullets.push(projectile('player', from, { x: from.x + Math.cos(angle + spread) * 500, y: from.y + Math.sin(angle + spread) * 500 }, damage, cfg.speed));
+    const spread = cfg.pellets > 1 ? (pellet / (cfg.pellets - 1) * 2 - 1) * cfg.spread : (Math.random() - .5) * (player.activeWeapon==='rifle'?rifleSpread(player.rifleHeat||0):cfg.spread);
+    bullets.push(projectile('player', from, { x: from.x + Math.cos(angle + spread) * 500, y: from.y + Math.sin(angle + spread) * 500 }, damage, cfg.speed,cfg));
   }
+  if(player.activeWeapon==='rifle'){player.rifleHeat=Math.min(1,(player.rifleHeat||0)+.22);player.rifleRest=0;}
   player.ammo--; player.magazines[player.activeWeapon] = player.ammo;
-  player.shotCooldown = Math.max(.065, cfg.interval - (stats(profile).perks.fireSaving || 0));
+  player.shotCooldown = fireInterval(player.activeWeapon,stats(profile).perks.fireSaving||0);
   player.fireVisual = .18;
   burst(from.x, from.y, '#f9ed48', cfg.pellets > 1 ? 7 : 4);
 }
 function updateBullets(dt) {
   for (const b of bullets) {
     if (b.life <= 0) continue;
-    const nx = b.x + b.vx * dt, ny = b.y + b.vy * dt;
+    const step=projectileStep(b,dt,b.owner==='player'?{left:camera,right:camera+canvas.width,top:cameraY,bottom:cameraY+canvas.height}:null);
+    if(step.distance<=0){b.life=0;continue;}
+    const nx=step.x,ny=step.y;
     let first = null, firstT = Infinity;
     for (const platform of world.platforms) { if(platform.stair)continue; const t = segmentHit(b.x, b.y, nx, ny, platform); if (t !== null && t < firstT) { firstT = t; first = { platform }; } }
     const actors = b.owner === 'player' ? world.enemies.filter(e => !e.dead && e.dodge <= 0) : [player];
     for (const actor of actors) { const t = segmentHit(b.x, b.y, nx, ny, actor, 2); if (t !== null && t < firstT) { firstT = t; first = { actor }; } }
     if (first) {
-      if (first.actor) { if (b.owner === 'player') hitEnemy(first.actor, b.damage, b.x - Math.sign(b.vx) * 10, true); else damagePlayer(b.damage, b.x - Math.sign(b.vx) * 10); }
+      const damage=projectileDamage(b,(b.traveled||0)+step.distance*firstT);
+      if (first.actor) { if (b.owner === 'player') hitEnemy(first.actor, damage, b.x - Math.sign(b.vx) * 10, true); else damagePlayer(damage, b.x - Math.sign(b.vx) * 10); }
       burst(b.x + (nx - b.x) * firstT, b.y + (ny - b.y) * firstT, '#f8b84c', 4); b.life = 0;
-    } else { b.x = nx; b.y = ny; b.life -= dt; }
+    } else { b.x = nx; b.y = ny; b.traveled=(b.traveled||0)+step.distance;b.life = step.expired?0:b.life-dt; }
     if (terminal()) break;
   }
   bullets = bullets.filter(b => b.life > 0);
 }
 function update(dt) {
   const p = player;
+  coolRifle(p,dt);
   for (const field of ['invuln', 'cooldown', 'attack', 'drop', 'dodge', 'dodgeCooldown', 'guardBreak', 'regenDelay', 'shotCooldown', 'fireVisual', 'healCooldown']) p[field] = Math.max(0, p[field] - dt);
   if (p.reload > 0) { p.reload = Math.max(0, p.reload - dt); if (!p.reload) { p.ammo = WEAPONS[p.activeWeapon].magazine; p.magazines[p.activeWeapon] = p.ammo; } }
   p.jumpBuffer -= dt; p.coyote = p.grounded ? .1 : p.coyote - dt;
@@ -415,7 +429,7 @@ function update(dt) {
   physics(p, world, dt);
   updateEnemies(world, p, bullets, dt, damagePlayer);
   if (terminal()) return;
-  if (p.attack > 0 && p.attack < .32 - animationInfo(p).contactAt && !p.attackHit) { p.attackHit = true; slash(); }
+  if (p.attack > 0 && p.attack < WEAPONS.weapon.duration - animationInfo(p).contactAt && !p.attackHit) { p.attackHit = true; slash(); }
   updateBullets(dt); if (terminal()) return;
   camera += (Math.max(0, Math.min(world.width - canvas.width, p.x - canvas.width * .38)) - camera) * Math.min(1, dt * 7);
   cameraY+=(Math.max(world.top||0,Math.min(0,p.y-canvas.height*.48))-cameraY)*Math.min(1,dt*7);

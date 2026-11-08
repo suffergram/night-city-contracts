@@ -37,12 +37,13 @@ export function aimAngle(actor, target) {
   if (!target) return 0;
   const pivot = aimOrigin(actor), dx = (target.x - pivot.x) * actor.facing, dy = target.y - pivot.y;
   if (Math.hypot(dx, dy) < 1) return actor.aimAngle || 0;
-  return Math.max(-Math.PI / 2, Math.min(Math.PI / 2, Math.round(Math.atan2(dy, dx) / AIM_STEP) * AIM_STEP));
+  return Math.max(-Math.PI / 2, Math.min(Math.PI / 2, Math.atan2(dy, dx)));
 }
 
 export function aimGeometry(actor, height = spriteHeight(actor)) {
   const box = spriteGeometry(height), angle = actor.aimAngle || 0;
-  const degrees = angle * 180 / Math.PI;
+  // Authored pose selection keeps its original sectors; rotation is continuous.
+  const degrees = Math.round(angle/AIM_STEP)*AIM_STEP_DEGREES;
   const poseIndex = degrees < -45.01 ? Math.min(2, Math.round((-degrees - 60) / 15))
     : degrees > .01 ? Math.min(5, 3 + Math.floor((degrees - 14.99) / 30)) : -1;
   const row = { gun: 0, rifle: 12, shotgun: 24 }[actor.activeWeapon] || 0;
@@ -80,6 +81,13 @@ export function aimGeometry(actor, height = spriteHeight(actor)) {
 export function aimedMuzzle(actor) {
   const rig = aimGeometry(actor);
   return { x: actor.x + actor.w / 2 + rig.muzzle.x * actor.facing, y: actor.y + actor.h + rig.muzzle.y };
+}
+
+// Ballistics aim from the physical muzzle, independently of authored arm poses.
+export function aimDirection(actor,target=null){
+  if(!target)return aimGeometry(actor).direction;
+  const muzzle=aimedMuzzle(actor),dx=target.x-muzzle.x,dy=target.y-muzzle.y,length=Math.hypot(dx,dy);
+  return length<1?aimGeometry(actor).direction:{x:dx/length,y:dy/length};
 }
 
 export function aimBodyFrame(actor) {

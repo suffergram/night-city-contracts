@@ -106,7 +106,7 @@ test('left mouse attacks the selected weapon; block, roll and reload still work'
 });
 test('swept player bullets damage enemies and cover intercepts them', async () => {
   const { run } = await boot();
-  run('expedition(1); const foe=world.enemies.find(e=>e.role==="gunner"); world.enemies=[foe]; world.platforms=[{x:0,y:GROUND,w:world.width,h:150,ground:true}]; foe.x=500; foe.y=GROUND-foe.h; foe.dodge=0; const targetY=foe.y+20; const hp=foe.hp; bullets=[projectile("player",{x:450,y:targetY},{x:700,y:targetY},20,850)]; updateBullets(.1);');
+  run('expedition(1); camera=0;cameraY=0;const foe=world.enemies.find(e=>e.role==="gunner"); world.enemies=[foe]; world.platforms=[{x:0,y:GROUND,w:world.width,h:150,ground:true}]; foe.x=500; foe.y=GROUND-foe.h; foe.dodge=0; const targetY=foe.y+20; const hp=foe.hp; bullets=[projectile("player",{x:450,y:targetY},{x:700,y:targetY},20,850)]; updateBullets(.1);');
   assert.equal(run('world.enemies[0].hp'), run('hp-20'));
   run('world.platforms.push({x:460,y:targetY-10,w:5,h:30}); bullets=[projectile("player",{x:450,y:targetY},{x:700,y:targetY},20,850)]; const before=foe.hp; updateBullets(.1);');
   assert.equal(run('foe.hp'), run('before'));
@@ -121,6 +121,50 @@ test('bullets damage heavy armour without pushing or interrupting its advance',a
   run('expedition(1);const tank=world.enemies.find(e=>e.role==="heavy");tank.x=600;tank.y=GROUND-tank.h;tank.vx=-tank.speed;tank.state="chase";tank.facing=-1;const initialHp=tank.hp;hitEnemy(tank,20,500,true);');
   assert.equal(run('tank.x'),600);assert.ok(run('tank.hp<initialHp'));
   assert.equal(run('tank.vx'),run('-tank.speed'));assert.equal(run('tank.state'),'chase');
+});
+
+test('shots stop at the screen edge and cannot hit invisible enemies',async()=>{
+  const {run}=await boot();
+  run('expedition(1);camera=0;cameraY=0;const foe=world.enemies.find(e=>e.role==="gunner");world.enemies=[foe];world.platforms=[{x:0,y:GROUND,w:world.width,h:150,ground:true}];foe.x=1250;foe.y=GROUND-foe.h;foe.dodge=0;const y=foe.y+20;const hp=foe.hp;bullets=[projectile("player",{x:1000,y},{x:1400,y},10,850,WEAPONS.gun)];updateBullets(1);');
+  assert.equal(run('foe.hp'),run('hp'));assert.equal(run('bullets.length'),0);
+  run('camera=200;bullets=[projectile("player",{x:1000,y},{x:1400,y},10,850,WEAPONS.gun)];updateBullets(1);');
+  assert.ok(run('foe.hp<hp'),'same enemy is hittable after entering the visible area');
+});
+
+test('actual shotgun pellets cannot damage a target beyond shotgun range',async()=>{
+  const {run}=await boot();
+  run('expedition(1);camera=0;cameraY=0;const foe=world.enemies.find(e=>e.role==="gunner");world.enemies=[foe];world.platforms=[{x:0,y:GROUND,w:world.width,h:150,ground:true}];player.x=100;player.y=GROUND-player.h;foe.x=470;foe.y=GROUND-foe.h;foe.dodge=0;const hp=foe.hp;selectWeapon("shotgun");player.shotCooldown=0;shoot();updateBullets(1);');
+  assert.equal(run('foe.hp'),run('hp'));assert.equal(run('bullets.length'),0);
+});
+
+test('katana has faster recovery and an extended but finite melee reach',async()=>{
+  const {run}=await boot();
+  run('expedition(1);player.x=400;player.y=GROUND-player.h;const close=world.enemies.find(e=>e.role==="gunner");const far=world.enemies.find(e=>e.role==="runner");world.enemies=[close,far];close.x=center(player).x+80-close.w/2;far.x=center(player).x+90-far.w/2;for(const e of world.enemies){e.y=GROUND-e.h;e.dodge=0;e.hp=1000;}player.facing=1;player.attack=0;player.cooldown=0;attack();slash();');
+  assert.equal(run('player.attack'),.26);assert.equal(run('player.cooldown'),.38);
+  assert.equal(run('close.hp'),970);assert.equal(run('far.hp'),1000);
+});
+
+test('katana hits touching and overlapping enemies even when their centre is behind the hero',async()=>{
+  const {run}=await boot();
+  run('expedition(1);player.x=400;player.y=GROUND-player.h;const foe=world.enemies.find(e=>e.role==="gunner");world.enemies=[foe];foe.w=28;foe.dodge=0;');
+  for(const facing of [-1,1])for(const offset of [-24,-20,0,20,24]){
+    run(`player.facing=${facing};foe.x=center(player).x+${offset}-foe.w/2;foe.y=player.y;foe.hp=1000;slash();`);
+    assert.equal(run('foe.hp'),970,`contact offset ${offset}, facing ${facing}`);
+  }
+  run('player.facing=1;foe.x=player.x;foe.y=player.y+50;foe.hp=1000;slash();');
+  assert.equal(run('foe.hp'),970,'body overlap counts even with vertically offset centres');
+  run('foe.y=player.y;foe.x=player.x-60;foe.hp=1000;slash();');
+  assert.equal(run('foe.hp'),1000,'separate enemies behind the hero remain outside the swing');
+  run('foe.x=player.x;foe.dodge=.2;slash();');
+  assert.equal(run('foe.hp'),1000,'contact does not cancel a genuine dodge');
+});
+
+test('rifle shots accumulate heat and switching weapons does not instantly clear it',async()=>{
+  const {run}=await boot();
+  run('selectWeapon("rifle");for(let i=0;i<3;i++){player.shotCooldown=0;shoot();}const heat=player.rifleHeat;selectWeapon("gun");');
+  assert.ok(run('heat>.6'));assert.equal(run('player.rifleHeat'),run('heat'));
+  run('update(.6);selectWeapon("rifle");player.shotCooldown=0;shoot();');
+  assert.ok(Math.abs(run('player.rifleHeat')-.22)<1e-6);
 });
 test('cache is single-use, completion unlocks next stage, and death preserves gear', async () => {
   const { run, click, elements } = await boot();
@@ -137,8 +181,8 @@ test('skills screen spends level points, updates combat stats and persists learn
   const { run, click, elements, storage } = await boot();
   run("press('p')"); assert.equal(run('modal'), 'skills');
   assert.equal((elements.get('overlay').innerHTML.match(/class="skill-branch"/g) || []).length, 5);
-  click('learn:blades'); assert.equal(run('stats(profile).damage'), 14);
-  click('learn:blades'); assert.equal(run('stats(profile).damage'), 16); assert.equal(run('availablePoints(profile)'), 0);
+  click('learn:blades'); assert.equal(run('stats(profile).damage'), 35);
+  click('learn:blades'); assert.equal(run('stats(profile).damage'), 40); assert.equal(run('availablePoints(profile)'), 0);
   click('learn:blades'); assert.equal(run('profile.skills.blades'), 2);
   assert.equal(JSON.parse(storage.get('emberfall-save-v1')).skills.blades, 2);
   run("press('p')"); assert.equal(run('modal'), null);
@@ -206,8 +250,8 @@ test('real pointer aiming fires from the rotated muzzle at cursor elevation on e
     assert.equal(run('Math.sign(bullets[0].vx)'),x===50?-1:1);
     assert.ok(run('Math.abs(bullets[0].x-aimedMuzzle(player).x)<1e-8'));
     assert.ok(run('Math.abs(bullets[0].y-aimedMuzzle(player).y)<1e-8'));
-    assert.ok(run('Math.abs(bullets[0].vx/WEAPONS.gun.speed-aimGeometry(player).direction.x)<1e-8'));
-    assert.ok(run('Math.abs(bullets[0].vy/WEAPONS.gun.speed-aimGeometry(player).direction.y)<1e-8'));
+    assert.ok(run('Math.abs(bullets[0].vx/WEAPONS.gun.speed-aimDirection(player,{x:mouse.x+camera,y:mouse.y+cameraY}).x)<1e-8'));
+    assert.ok(run('Math.abs(bullets[0].vy/WEAPONS.gun.speed-aimDirection(player,{x:mouse.x+camera,y:mouse.y+cameraY}).y)<1e-8'));
   }
   run('mouse.active=false;player.shotCooldown=0;shoot();');
   assert.equal(run('bullets.at(-1).vy'),0,'keyboard-only fire remains horizontal');

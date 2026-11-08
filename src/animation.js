@@ -1,3 +1,4 @@
+import { WEAPONS } from './weapons.js';
 // Frame selection uses actor-local time. Pausing freezes animations; a new action starts at frame 0.
 export const HERO_CLIPS = {
   idle: { frames: [0, 1, 2, 3, 4, 5], fps: 5, loop: true },
@@ -5,7 +6,7 @@ export const HERO_CLIPS = {
   jump: { frames: [12, 13, 14, 15, 16, 17], fps: 9 },
   land: { frames: [17, 12], fps: 13 },
   roll: { frames: [18, 19, 20, 21, 22, 23], duration: .32 },
-  attack: { frames: [24, 25, 26, 27, 28, 29], duration: .32 },
+  attack: { frames: [24, 25, 26, 27, 28, 29], duration: WEAPONS.weapon.duration },
   shoot: { frames: [31, 32, 33, 34], duration: .27, loop: true },
   reload: { sheet: 'utility', frames: [6, 7, 8, 9, 10, 11], reload: true },
   runReload: { sheet: 'utility', frames: [12, 13, 14, 15, 16, 17], reload: true, fps: 13, loop: true },
@@ -13,13 +14,13 @@ export const HERO_CLIPS = {
   jumpReload: { sheet: 'utility', frames: [24, 25, 26, 27, 28, 29], reload: true },
   block: { frames: [25], fps: 1 },
   runBack: { sheet: 'actions', frames: [0, 1, 2, 3, 4, 5], fps: 12, loop: true },
-  runAttack: { sheet: 'actions', frames: [6, 7, 8, 9, 10, 11], duration: .32 },
-  backAttack: { sheet: 'utility', frames: [0, 1, 2, 3, 4, 5], duration: .32, contactAt: .21 },
+  runAttack: { sheet: 'actions', frames: [6, 7, 8, 9, 10, 11], duration: WEAPONS.weapon.duration },
+  backAttack: { sheet: 'utility', frames: [0, 1, 2, 3, 4, 5], duration: WEAPONS.weapon.duration, contactAt: .21/.32*WEAPONS.weapon.duration },
   runShoot: { sheet: 'actions', frames: [12, 13, 14, 15, 16, 17], fps: 13, loop: true, muzzle: [.87, .32] },
   backShoot: { sheet: 'actions', frames: [18, 19, 20, 21, 22, 23], fps: 12, loop: true, muzzle: [.87, .32] },
   runAim: { sheet: 'actions', frames: [12, 13, 14, 15, 16, 17], fps: 13, loop: true, muzzle: [.87, .32] },
   backAim: { sheet: 'actions', frames: [18, 19, 20, 21, 22, 23], fps: 12, loop: true, muzzle: [.87, .32] },
-  jumpAttack: { sheet: 'actions', frames: [24, 25, 26, 27, 28, 29], duration: .32 },
+  jumpAttack: { sheet: 'actions', frames: [24, 25, 26, 27, 28, 29], duration: WEAPONS.weapon.duration },
   jumpShoot: { sheet: 'actions', frames: [30, 31, 32, 33, 34, 35], fps: 12, loop: true, muzzle: [.86, .31] },
   jumpAim: { sheet: 'utility', frames: [30, 31, 32, 33, 34, 35], fps: 7, muzzle: [.86, .31] },
 };
@@ -78,7 +79,7 @@ function activeClip(actor, role = 'hero') {
 }
 export function animationInfo(actor, role = 'hero') {
   const { name, clip } = activeClip(actor, role);
-  return { name, sheet: clip.sheet || (role === 'hero' ? 'hero' : 'enemies'), muzzle: clip.muzzle, contactAt: clip.contactAt ?? .12 };
+  return { name, sheet: clip.sheet || (role === 'hero' ? 'hero' : 'enemies'), muzzle: clip.muzzle, contactAt:role==='hero'&&['attack','runAttack','backAttack','jumpAttack'].includes(name)?clip.contactAt??WEAPONS.weapon.contactAt:clip.contactAt ?? .12 };
 }
 export function advanceAnimation(actor, dt, role = 'hero') {
   if (actor.grounded && Math.abs(actor.vx || 0) > 8) actor.strideTime = (actor.strideTime || 0) + dt;
@@ -91,7 +92,7 @@ export function animationFrame(actor, role = 'hero') {
   const { name, time, clip } = activeClip(actor, role);
   if(role==='hero'&&['run','runBack','runAim','backAim','runShoot','backShoot'].includes(name))return clip.frames[runStep(actor)];
   if (role === 'hero' && ['attack','runAttack','backAttack','jumpAttack'].includes(name)) {
-    const progress = Math.max(0, Math.min(1, 1 - actor.attack / .32));
+    const progress = Math.max(0, Math.min(1, 1 - actor.attack / WEAPONS.weapon.duration));
     return clip.frames[Math.min(clip.frames.length - 1, Math.floor(progress * clip.frames.length))];
   }
   if (role === 'hero' && name === 'idle' && actor.activeWeapon && actor.activeWeapon !== 'weapon') return 31;

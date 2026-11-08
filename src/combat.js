@@ -120,9 +120,25 @@ export function segmentHit(x1, y1, x2, y2, box, padding = 0) {
 export function lineOfSight(world, from, to) {
   return !world.platforms.some(p => !p.stair && segmentHit(from.x, from.y, to.x, to.y, p) !== null);
 }
-export function projectile(owner, from, to, damage, speed) {
+export function projectile(owner, from, to, damage, speed,ballistics={}) {
   const dx = to.x - from.x, dy = to.y - from.y, length = Math.hypot(dx, dy) || 1;
-  return { owner, x: from.x, y: from.y, vx: dx / length * speed, vy: dy / length * speed, damage, life: 2.2 };
+  return { owner, x: from.x, y: from.y, vx: dx / length * speed, vy: dy / length * speed, damage, life: 2.2,range:ballistics.range??680,traveled:0,falloffStart:ballistics.falloffStart??680,minMultiplier:ballistics.minMultiplier??1 };
+}
+export function projectileDamage(b,distance=b.traveled||0){
+  if(distance>b.range)return 0;
+  const falloff=Math.max(0,Math.min(1,(distance-b.falloffStart)/Math.max(1,b.range-b.falloffStart)));
+  return Math.max(1,Math.round(b.damage*(1-falloff*(1-b.minMultiplier))));
+}
+export function projectileStep(b,dt,bounds=null){
+  const speed=Math.hypot(b.vx,b.vy),ux=b.vx/speed||0,uy=b.vy/speed||0;
+  let distance=Math.max(0,Math.min(speed*dt,speed*b.life,(b.range??680)-(b.traveled||0)));
+  if(bounds){
+    if(b.x<bounds.left||b.x>bounds.right||b.y<bounds.top||b.y>bounds.bottom)distance=0;
+    else for(const [position,direction,lo,hi]of [[b.x,ux,bounds.left,bounds.right],[b.y,uy,bounds.top,bounds.bottom]]){
+      if(direction)distance=Math.min(distance,Math.max(0,((direction>0?hi:lo)-position)/direction));
+    }
+  }
+  return {x:b.x+ux*distance,y:b.y+uy*distance,distance,expired:distance<speed*dt-1e-6||(b.traveled||0)+distance>=(b.range??680)-1e-6||b.life<=dt};
 }
 export function incomingDamage(player, raw, sourceX, armor) {
   if (player.invuln > 0 || player.dodge > .1) return { damage: 0, blocked: false };

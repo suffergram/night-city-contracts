@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AIM_STEP, AIM_GUNS, aimAngle, aimOrigin, aimGeometry, aimedMuzzle, canAim, aimBodyFrame,aimBodySheet } from '../src/aim.js';
+import { AIM_STEP, AIM_GUNS, aimAngle, aimOrigin, aimGeometry, aimedMuzzle, aimDirection, canAim, aimBodyFrame,aimBodySheet } from '../src/aim.js';
 
 const hero = () => ({ x: 120, y: 200, w: 20, h: 54, facing: 1, activeWeapon: 'gun', grounded: true, vx: 0, vy: 0, aimAngle: 0 });
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-8, `${a} ≈ ${b}`);
@@ -13,7 +13,7 @@ test('forward aim uses whole redrawn bodies; idle, backward and airborne use the
   for(const state of [{vx:0},{vx:-196},{grounded:false}])assert.equal(aimBodySheet({...actor,...state}),'aimRig');
 });
 
-test('cursor chooses thirteen 15-degree elevations, mirrored left without flipping up/down', () => {
+test('cursor aim is continuous and mirrored left without flipping up/down', () => {
   for (const facing of [-1, 1]) for (let sector = -6; sector <= 6; sector++) {
     const actor = { ...hero(), facing }, pivot = aimOrigin(actor), angle = sector * AIM_STEP;
     actor.aimAngle = aimAngle(actor, { x: pivot.x + facing * Math.cos(angle) * 400, y: pivot.y + Math.sin(angle) * 400 });
@@ -22,9 +22,21 @@ test('cursor chooses thirteen 15-degree elevations, mirrored left without flippi
     close(dir.x, facing * Math.cos(angle)); close(dir.y, Math.sin(angle));
   }
   const actor = hero(), pivot = aimOrigin(actor);
-  close(aimAngle(actor, { x: pivot.x + 400, y: pivot.y + 20 }), 0);
-  close(aimAngle(actor, { x: pivot.x + 400, y: pivot.y + 80 }), AIM_STEP);
+  close(aimAngle(actor, { x: pivot.x + 400, y: pivot.y + 20 }), Math.atan2(20,400));
+  close(aimAngle(actor, { x: pivot.x + 400, y: pivot.y + 80 }), Math.atan2(80,400));
   close(aimAngle(actor, null), 0);
+});
+
+test('fractional elevations retain authored poses while every shot direction intersects the cursor',()=>{
+  for(const slot of ['gun','rifle','shotgun'])for(const facing of [-1,1])for(const degrees of [-89.7,-63.4,-7.3,2.7,14.2,37.8,72.1,89.2]){
+    const actor={...hero(),activeWeapon:slot,facing},pivot=aimOrigin(actor),angle=degrees*Math.PI/180;
+    const target={x:pivot.x+facing*Math.cos(angle)*340,y:pivot.y+Math.sin(angle)*340};
+    actor.aimAngle=aimAngle(actor,target);close(actor.aimAngle,angle);
+    const rig=aimGeometry(actor),snapped=aimGeometry({...actor,aimAngle:Math.round(angle/AIM_STEP)*AIM_STEP});
+    assert.equal(rig.sheet,snapped.sheet);assert.equal(rig.frame,snapped.frame);
+    const muzzle=aimedMuzzle(actor),direction=aimDirection(actor,target),distance=Math.hypot(target.x-muzzle.x,target.y-muzzle.y);
+    close(muzzle.x+direction.x*distance,target.x);close(muzzle.y+direction.y*distance,target.y);
+  }
 });
 
 test('world muzzle follows the registered pose and shot direction at every elevation and weapon', () => {

@@ -1,5 +1,5 @@
 import { skillEffects, validateSkills } from './skills.js';
-import { ACTOR_HEIGHT } from './weapons.js';
+import { ACTOR_HEIGHT, weaponDamage } from './weapons.js';
 import {createLayout,LEVEL_KINDS} from './level-layout.js';
 export {LEVEL_KINDS} from './level-layout.js';
 export const GROUND = 538;
@@ -21,26 +21,34 @@ export function random(seed) {
 }
 export function stats(profile) {
   const e = profile.equipment, level = profile.level - 1, perks = skillEffects(profile);
+  const power=offensivePower(profile);
   return {
     maxHp: 100 + level * 6 + profile.vitality * 10 + (perks.hp || 0),
-    damage: 8 + (e.weapon?.power || 0) + level + profile.strength * 2 + (e.weapon ? perks.melee || 0 : 0) + (perks.analysis || 0),
-    gunDamage: e.gun ? e.gun.power + level + profile.strength + (perks.gun || 0) + (perks.analysis || 0) : 0,
-    rifleDamage: e.rifle ? e.rifle.power + level + profile.strength + (perks.gun || 0) + (perks.analysis || 0) : 0,
-    shotgunDamage: e.shotgun ? e.shotgun.power + level + profile.strength + (perks.gun || 0) + (perks.analysis || 0) : 0,
+    damage: weaponDamage('weapon',power.damage),
+    gunDamage: e.gun ? weaponDamage('gun',power.gunDamage) : 0,
+    rifleDamage: e.rifle ? weaponDamage('rifle',power.rifleDamage) : 0,
+    shotgunDamage: e.shotgun ? weaponDamage('shotgun',power.shotgunDamage) : 0,
     armor: ['head', 'torso', 'legs', 'feet'].reduce((sum, slot) => sum + (e[slot]?.power || 0), 0) + (perks.armor || 0),
     maxStamina: 100 + profile.vitality * 3 + (perks.stamina || 0),
     staminaRegen: 24 + (perks.staminaRegen || 0), meleeCost: BALANCE.meleeCost - (perks.meleeSaving || 0),
     rollCost: BALANCE.rollCost - (perks.rollSaving || 0), reloadTime: BALANCE.reload - (perks.reloadSaving || 0),
     healing: 45 + (perks.healing || 0), healCooldown: 8 - (perks.healCooldownSaving || 0),
-    fireInterval: .27 - (perks.fireSaving || 0), blockCostMultiplier: 1 - (perks.blockSaving || 0),
+    fireInterval: .32 - (perks.fireSaving || 0), blockCostMultiplier: 1 - (perks.blockSaving || 0),
     perks,
     nextXp: 320 + level * 110 + level * level * 25,
   };
 }
+function offensivePower(profile){
+  const e=profile.equipment,level=profile.level-1,perks=skillEffects(profile);
+  const ranged=slot=>e[slot]?e[slot].power+level+profile.strength+(perks.gun||0)+(perks.analysis||0):0;
+  return {damage:8+(e.weapon?.power||0)+level+profile.strength*2+(e.weapon?perks.melee||0:0)+(perks.analysis||0),gunDamage:ranged('gun'),rifleDamage:ranged('rifle'),shotgunDamage:ranged('shotgun')};
+}
 export function recommendedDepth(profile) {
   const s = stats(profile);
-  const rangedGrowth = Math.max(0, s.gunDamage - 8, (s.rifleDamage - 4) * 1.4, (s.shotgunDamage - 4) * 1.2);
-  const power = 1 + Math.floor(Math.max(0, s.damage - 12) / 4 + rangedGrowth / 6 + Math.max(0, s.maxHp - 100) / 40 + Math.max(0, s.armor - 4) / 5);
+  // Weapon tuning must not raise contract threat for unchanged equipment/saves.
+  const offense=offensivePower(profile);
+  const rangedGrowth = Math.max(0, offense.gunDamage - 8, (offense.rifleDamage - 4) * 1.4, (offense.shotgunDamage - 4) * 1.2);
+  const power = 1 + Math.floor(Math.max(0, offense.damage - 12) / 4 + rangedGrowth / 6 + Math.max(0, s.maxHp - 100) / 40 + Math.max(0, s.armor - 4) / 5);
   return Math.max(1, profile.best, profile.threat, power, 1 + Math.floor((profile.level - 1) * .65));
 }
 export function addXp(profile, amount) {

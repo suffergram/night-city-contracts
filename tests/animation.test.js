@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { HERO_CLIPS, ENEMY_CLIPS, LONG_GUN_CLIPS, advanceAnimation, animationFrame, animationState, animationInfo, atlasCell,runStep } from '../src/animation.js';
-import { muzzlePosition, ACTOR_HEIGHT } from '../src/weapons.js';
+import { muzzlePosition, ACTOR_HEIGHT, WEAPONS } from '../src/weapons.js';
 import { SPRITES } from '../src/raster.js';
 
 test('katana, aiming and shooting share a complete six-phase run without restarting the step',()=>{
@@ -78,12 +78,13 @@ test('backward katana attacks use complete authored poses, not forward attack pi
   assert.equal(frames.size,6);assert.ok([...frames].every(frame=>frame<6));
 });
 test('attack pose progress survives reversing direction or leaving the ground mid-swing',()=>{
-  const actor={grounded:true,vx:200,vy:0,facing:1,activeWeapon:'weapon',attack:.10,animation:{name:'runAttack',time:.22}};
+  const remaining=.10/.32*WEAPONS.weapon.duration;
+  const actor={grounded:true,vx:200,vy:0,facing:1,activeWeapon:'weapon',attack:remaining,animation:{name:'runAttack',time:.22}};
   assert.equal(animationFrame(actor),10);
   actor.vx=-180;advanceAnimation(actor,.001);assert.equal(animationFrame(actor),4);
-  assert.equal(animationInfo(actor).contactAt,.21);
+  assert.equal(animationInfo(actor).contactAt,.21/.32*WEAPONS.weapon.duration);
   actor.grounded=false;advanceAnimation(actor,.001);assert.equal(animationFrame(actor),28);
-  assert.equal(actor.attack,.10);
+  assert.equal(actor.attack,remaining);
 });
 test('non-firing jumps never use the flash-bearing shooting atlas, even after an interrupted shot', () => {
   for(const weapon of ['gun','rifle','shotgun'])for(const vy of [-550,-120,0,200,500]){
