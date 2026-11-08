@@ -71,6 +71,10 @@ try {
     }
     await evaluate('const high=levelPreview.generate(17,"megablock");levelPreview.setCamera(high.portal.x-500,high.top)');
     await screenshot('night-city-level-megablock-top.png');
+    for(const backdrop of ['district','metropolis']){
+      const seed=await evaluate(`(()=>{for(let seed=1;seed<=80;seed++){if(levelPreview.generate(seed,'market').backdrop==='${backdrop}')return seed;}return null;})()`);
+      assert.ok(seed);await evaluate('levelPreview.setCamera(450,0)');await screenshot('night-city-market-'+backdrop+'.png');
+    }
     assert.deepEqual(errors,[]);console.log('Level checks passed: four rendered themes, distinct seeded plans and vertical camera; no runtime exceptions.');
   }else if(process.argv.includes('--merchant-review')){
     await evaluate(`(async()=>{const {DEFAULT_PROFILE}=await import('/src/world.js');const p=structuredClone(DEFAULT_PROFILE);p.gold=2000;p.bag=[{id:'shop-review',type:'torso',name:'Арамидная куртка',rarity:1,power:5}];localStorage.setItem('emberfall-save-v1',JSON.stringify(p));})()`);
@@ -135,7 +139,11 @@ try {
     await evaluate('environmentPreview.setScene("sector");environmentPreview.setCamera(1024);environmentPreview.setTime(4)');
     await screenshot('night-city-environment-sector.png');
     assert.ok(await evaluate(`(async()=>{const {drawRasterEnvironment}=await import('/src/environment.js');const c=document.createElement('canvas');c.width=1500;c.height=660;const x=c.getContext('2d');for(const camera of [-30,0,1019,1024,1487,1493,3000]){x.clearRect(0,0,1500,660);x.save();x.translate(-camera,0);drawRasterEnvironment(x,c,{width:5000,platforms:[],chests:[],portal:{x:4800}},'hub',camera,0);x.restore();const d=x.getImageData(0,545,1500,115).data;for(let i=3;i<d.length;i+=4)if(d[i]!==255)return false;}return true;})()`),'road remains opaque across tile edges and camera positions');
-    assert.deepEqual(errors,[]);console.log('Environment checks passed: animated lights, paused particles, stationary asphalt and gap-free road coverage.');
+    const profiles=await evaluate(`(async()=>{const {drawRasterBackdrop}=await import('/src/environment.js');const c=document.createElement('canvas');c.width=1200;c.height=660;const x=c.getContext('2d');const paint=w=>{x.clearRect(0,0,c.width,c.height);drawRasterBackdrop(x,c,0,0,w);return c.toDataURL();};const hub=paint(null),market=paint({kind:'market',backdrop:'metropolis'}),district=paint({kind:'market',backdrop:'district'}),industrial=paint({kind:'industrial'});return {sameHubMarket:hub===market,sameDistrict:district===industrial,different:hub!==district};})()`);
+    assert.deepEqual(profiles,{sameHubMarket:true,sameDistrict:true,different:true});
+    await evaluate('environmentPreview.setScene("hub");environmentPreview.setCamera(500);environmentPreview.setTime(4)');
+    await screenshot('night-city-metropolis-hub-scrolled.png');
+    assert.deepEqual(errors,[]);console.log('Environment checks passed: hub/market backdrop profiles, animated lights, paused particles, stationary asphalt and gap-free road coverage.');
   }else{
   if(!process.argv.includes('--run-review')){
   assert.ok(await evaluate("(async()=>{const {drawRasterActor}=await import('/src/raster.js');const {DEFAULT_PROFILE}=await import('/src/world.js');const paint=gear=>{const c=document.createElement('canvas');c.width=240;c.height=240;const x=c.getContext('2d');x.translate(120,235);drawRasterActor(x,{},'hero',gear,{sheet:'hero',frame:0,height:220});return x.getImageData(0,0,240,240).data;};const base=structuredClone(DEFAULT_PROFILE.equipment),a=paint(base);const same=(b,rect)=>{const [left,top,w,h]=rect;for(let y=top;y<top+h;y++)for(let x=left;x<left+w;x++)for(let k=0;k<4;k++){const i=(y*240+x)*4+k;if(a[i]!==b[i])return false;}return true;};for(const slot of ['torso','legs','feet','head']){const gear=structuredClone(base);gear[slot]={id:'material-regression-'+slot,name:'test',rarity:2};const b=paint(gear);if(!same(b,[168,140,70,55]))throw Error(slot+' blade');if(slot!=='head'&&!same(b,[113,8,38,35]))throw Error(slot+' face');if(!same(b,[65,104,17,22]))throw Error(slot+' arm');if(slot==='head'&&!same(b,[114,54,37,26]))throw Error(slot+' collar');if(!a.some((v,i)=>v!==b[i]))throw Error(slot+' unchanged');}return true;})()"), 'equipment changes preserve katana, face, cyberarm and collar pixels in the inventory preview');

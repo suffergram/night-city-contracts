@@ -127,5 +127,7 @@ export function createLayout(rng,ground,forcedKind) {
     for(let x=integer(150,250);x<width-90;x+=integer(420,600))layout.lamps.push({x,y:ground});
   }
   layout.name=LEVEL_KINDS[kind].name;layout.flavour=pick(['Северный сектор','Техническое крыло','Восточная линия','Закрытый периметр']);
+  // Pick once for the contract; never reroll while scrolling or drawing.
+  layout.backdrop=kind==='market'&&rng()<.5?'metropolis':'district';
   return layout;
 }

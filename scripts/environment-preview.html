@@ -16,7 +16,7 @@ await Promise.all([preloadEnvironment(),preloadSprites()]);
 function draw(){
   const camera=Number(document.getElementById('camera').value),mode=document.getElementById('scene').value;
   ctx.fillStyle='#101528';ctx.fillRect(0,0,canvas.width,canvas.height);
-  drawRasterBackdrop(ctx,canvas,camera,time);ctx.save();ctx.translate(-camera,0);
+  drawRasterBackdrop(ctx,canvas,camera,time,mode==='hub'?world:{kind:'industrial'});ctx.save();ctx.translate(-camera,0);
   drawRasterEnvironment(ctx,canvas,world,mode,camera,time);
   for(const x of [220,1050,1900,2800])if(x>camera-100&&x<camera+canvas.width+100){ctx.save();ctx.translate(x,GROUND);drawRasterActor(ctx,{grounded:true,animation:{name:'idle',time}},'hero',DEFAULT_PROFILE.equipment,{height:60});ctx.restore();}
   ctx.restore();

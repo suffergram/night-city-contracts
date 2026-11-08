@@ -10,12 +10,22 @@ export const ENVIRONMENT_ASSETS = {
   road: new URL('../assets/environment/asphalt-dry-v1.png', import.meta.url).href,
   locations:new URL('../assets/environment/locations-v1.png',import.meta.url).href,
   interiorWall:new URL('../assets/environment/megablock-interior-v1.png',import.meta.url).href,
+  metropolisFar:new URL('../assets/environment/metropolis-far-v1.png',import.meta.url).href,
+  metropolisMid:new URL('../assets/environment/metropolis-mid-v1.png',import.meta.url).href,
 };
 export const PARALLAX_LAYERS = [
   { asset: 'farCity', speed: .06, height: GROUND + 180, bottom: GROUND + 8, alpha: 1, filter: 'brightness(.75) saturate(.75)' },
   { asset: 'midCity', speed: .24, height: ACTOR_HEIGHT * 7, bottom: GROUND - 18, alpha: .78, filter: 'brightness(.75) saturate(.8)' },
   { asset: 'nearCity', speed: .52, height: ACTOR_HEIGHT * 4.5, bottom: GROUND - 6, alpha: .94, filter: 'brightness(.82)' },
 ];
+export const HUB_PARALLAX_LAYERS = [
+  { asset:'metropolisFar',speed:.04,height:GROUND+220,bottom:GROUND+8,alpha:1,filter:'brightness(.82) saturate(.95)' },
+  { asset:'metropolisMid',speed:.18,height:ACTOR_HEIGHT*12,bottom:GROUND+4,alpha:.92,filter:'brightness(.82) saturate(.95)' },
+  {...PARALLAX_LAYERS[2]},
+];
+export function backdropLayers(world=null){
+  return !world?.kind||world.kind==='market'&&world.backdrop==='metropolis'?HUB_PARALLAX_LAYERS:PARALLAX_LAYERS;
+}
 // Frontmost doors are roughly 1.3–1.5 actor heights, rather than embedded in a scaled panorama.
 export const HUMAN_SCALE = {
   safehouse: { index: 0, center: 158, height: ACTOR_HEIGHT * 3.55, doorFraction: .37 },
@@ -168,7 +178,7 @@ export function drawRasterBackdrop(ctx, canvas, camera,time=0,world=null,cameraY
     }
     ctx.restore();return true;
   }
-  for (const layer of PARALLAX_LAYERS) {
+  for (const layer of backdropLayers(world)) {
     if(world?.kind==='port'&&layer.asset==='nearCity')continue;
     const image = images.get(layer.asset); if (!image) continue;
     const width = layer.height * image.width / image.height;

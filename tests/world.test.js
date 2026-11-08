@@ -48,6 +48,16 @@ test('each location theme supports different layouts at the same difficulty',()=
   }
 });
 
+test('market rolls its backdrop once per seed with an even split; other locations retain the district preset',()=>{
+  let metropolitan=0;
+  for(let seed=1;seed<=500;seed++){
+    const w=generateLevel(1,seed,'market');metropolitan+=w.backdrop==='metropolis';
+    assert.equal(w.backdrop,generateLevel(1,seed,'market').backdrop);
+  }
+  assert.ok(metropolitan>210&&metropolitan<290,'50/50 backdrop distribution: '+metropolitan);
+  for(const kind of ['industrial','port','megablock'])assert.equal(generateLevel(1,42,kind).backdrop,'district');
+});
+
 test('market upper rooms rest on stalls and street lights always stand on the ground',()=>{
   let rooms=0;
   for(let seed=1;seed<=60;seed++){

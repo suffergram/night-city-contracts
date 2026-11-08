@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { ENVIRONMENT_ASSETS, PARALLAX_LAYERS, HUMAN_SCALE, parallaxTiles } from '../src/environment.js';
+import { ENVIRONMENT_ASSETS, PARALLAX_LAYERS, HUB_PARALLAX_LAYERS, backdropLayers, HUMAN_SCALE, parallaxTiles } from '../src/environment.js';
 import { WEAPON_ART } from '../src/raster.js';
 import { WEAPONS, ACTOR_HEIGHT } from '../src/weapons.js';
 import {lightLevel,lampMotes} from '../src/ambient.js';
@@ -37,6 +37,14 @@ test('independent background layers move increasingly faster with distance from 
     const after=parallaxTiles(100,1200,1500,layer.speed)[0];
     assert.ok(Math.abs((before-after)-100*layer.speed)<1e-8);
   }
+});
+
+test('hub and metropolitan markets share a dense city profile without changing other location backdrops',()=>{
+  assert.equal(backdropLayers(),HUB_PARALLAX_LAYERS);
+  assert.equal(backdropLayers({kind:'market',backdrop:'metropolis'}),HUB_PARALLAX_LAYERS);
+  for(const kind of ['industrial','port','megablock','market'])assert.equal(backdropLayers({kind,backdrop:'district'}),PARALLAX_LAYERS);
+  assert.ok(HUB_PARALLAX_LAYERS[0].speed<HUB_PARALLAX_LAYERS[1].speed&&HUB_PARALLAX_LAYERS[1].speed<HUB_PARALLAX_LAYERS[2].speed);
+  assert.ok(HUB_PARALLAX_LAYERS[1].height>PARALLAX_LAYERS[1].height);
 });
 test('repeating parallax panels cover wide screens without gaps or jumps at negative camera positions',()=>{
   for(const camera of [-1000,-1,0,1,1200,10000])for(const viewport of [320,1200,2800])for(const layer of PARALLAX_LAYERS){
