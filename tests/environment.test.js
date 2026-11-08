@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { ENVIRONMENT_ASSETS, PARALLAX_LAYERS, HUB_PARALLAX_LAYERS, backdropLayers, HUMAN_SCALE, parallaxTiles } from '../src/environment.js';
 import { WEAPON_ART } from '../src/raster.js';
 import { WEAPONS, ACTOR_HEIGHT } from '../src/weapons.js';
-import {lightLevel,lampMotes} from '../src/ambient.js';
+import {lightLevel,lampMotes,dustMotes,cityTraffic,electricalSparks,screenEmission} from '../src/ambient.js';
 
 test('faulty neon has independent brief outages while regular lights shimmer continuously',()=>{
   const levels=Array.from({length:1200},(_,i)=>lightLevel(i/100,17,true));
@@ -13,6 +13,12 @@ test('faulty neon has independent brief outages while regular lights shimmer con
   for(let i=0;i<1200;i++)assert.ok(lightLevel(i/100,17)>.7);
   assert.notEqual(lightLevel(3,17,true),lightLevel(3,92,true));
 });
+
+test('advertisement animation excludes neutral walls and warm window pixels from its emission mask',()=>{
+  assert.equal(screenEmission(160,160,160),0);assert.equal(screenEmission(210,150,70),0);
+  assert.equal(screenEmission(20,35,45),0);
+  assert.ok(screenEmission(30,200,220)>.8);assert.ok(screenEmission(220,40,180)>.8);
+});
 test('ambient particles follow their lamp and freeze exactly when game time is paused',()=>{
   const a=lampMotes(2,13,100,200,18),b=lampMotes(2,13,400,150,18);
   assert.deepEqual(a,lampMotes(2,13,100,200,18));assert.equal(a.length,6);
@@ -20,6 +26,40 @@ test('ambient particles follow their lamp and freeze exactly when game time is p
     assert.ok(Math.abs(b[i].x-a[i].x-300)<1e-9);assert.ok(Math.abs(b[i].y-a[i].y+50)<1e-9);
   }
   assert.notDeepEqual(a,lampMotes(3,13,100,200,18));
+});
+
+test('dry dust stays in its world-space region and depends only on game time',()=>{
+  for(const time of [-3,0,5,1000]){
+    const a=dustMotes(time,17,200,300,280,145),b=dustMotes(time,17,600,200,280,145);
+    assert.deepEqual(a,dustMotes(time,17,200,300,280,145));
+    for(let i=0;i<a.length;i++){
+      assert.ok(a[i].x>=200&&a[i].x<480&&a[i].y>=300&&a[i].y<445);
+      assert.ok(Math.abs(b[i].x-a[i].x-400)<1e-8);assert.ok(Math.abs(b[i].y-a[i].y+100)<1e-8);
+    }
+  }
+});
+
+test('city traffic is deterministic, camera-aware and bounded on wide viewports',()=>{
+  for(const width of [390,1200,2800])for(const camera of [-100,0,500,10000]){
+    const traffic=cityTraffic(4,camera,width,1.5);
+    assert.deepEqual(traffic,cityTraffic(4,camera,width,1.5));
+    assert.ok(traffic.length<=(Math.ceil(width/1700)+1)*6);
+    assert.ok(traffic.every(v=>v.x>=-30&&v.x<=width+30));
+  }
+  assert.notDeepEqual(cityTraffic(1,0,1200),cityTraffic(2,0,1200));
+});
+
+test('electrical sparks are brief local bursts rather than a continuous particle shower',()=>{
+  let active=0;
+  for(let i=0;i<1000;i++){
+    const a=electricalSparks(i*.05,32,100,200),b=electricalSparks(i*.05,32,200,300);
+    if(a.length)active++;
+    for(let j=0;j<a.length;j++){
+      assert.ok(a[j].alpha>0&&a[j].alpha<=1);
+      assert.ok(Math.abs(b[j].x-a[j].x-100)<1e-8);assert.ok(Math.abs(b[j].y-a[j].y-100)<1e-8);
+    }
+  }
+  assert.ok(active>0&&active<100);
 });
 
 test('painted city, modular props and weapon artwork exist as local high-resolution PNGs', async()=>{

@@ -1,6 +1,6 @@
 import { GROUND } from './world.js';
 import { ACTOR_HEIGHT } from './weapons.js';
-import {lightLevel,ambientGlow,drawLampAtmosphere,drawVentSteam} from './ambient.js';
+import {lightLevel,ambientGlow,drawLampAtmosphere,drawVentSteam,drawCityTraffic,drawHologram,drawScreenAnimation,drawCookingSteam,drawStallLights,drawHarbourHaze,drawElectricalFault,drawSceneDust,drawWarningBeacon} from './ambient.js';
 
 export const ENVIRONMENT_ASSETS = {
   farCity: new URL('../assets/environment/skyline-dry-v2.png', import.meta.url).href,
@@ -58,6 +58,10 @@ const WALL_LIGHTS=[
   {rect:[.515,.50,.015,.14],colour:'#fc59b8',unstable:true},
   {rect:[.81,.59,.06,.03],colour:'#48e3ec'},
 ];
+const CITY_SCREENS={
+  metropolisFar:[{r:[.806,.085,.115,.36],colour:'#e556c3'},{r:[.225,.02,.08,.28],colour:'#53ddea'}],
+  metropolisMid:[{r:[.388,.33,.063,.25],colour:'#53ddea'},{r:[.633,.405,.044,.24],colour:'#e556c3'},{r:[.10,.38,.04,.18],colour:'#53ddea'}],
+};
 export function preloadEnvironment() {
   if (typeof Image === 'undefined') return Promise.resolve();
   return loading ||= Promise.all(Object.entries(ENVIRONMENT_ASSETS).map(([id, url]) => new Promise((resolve, reject) => {
@@ -87,6 +91,9 @@ function drawProp(ctx, index, x, feet, width, height,time=0) {
   height ||= width * p.h / p.w;
   ctx.drawImage(p.image, p.x, p.y, p.w, p.h, x, feet - height, width, height);
   drawLights(ctx,p,PROP_LIGHTS[index]||[],x,feet-height,width,height,time,index*137+Math.floor(x*3),'prop:'+index);
+  for(const light of PROP_LIGHTS[index]||[])if(!light.lamp&&light.rect[2]>.15){
+    const [lx,ly,lw,lh]=light.rect;drawScreenAnimation(ctx,p,light.rect,x+lx*width,feet-height+ly*height,lw*width,lh*height,time,x+index,'props:'+index);
+  }
   if(index===9)drawVentSteam(ctx,x+width*.52,feet-height*.98,height*.6,time,x);
   return true;
 }
@@ -195,14 +202,19 @@ export function drawRasterBackdrop(ctx, canvas, camera,time=0,world=null,cameraY
       ctx.drawImage(surface, x, layer.bottom - layer.height, width + 1, layer.height);
       if(layer.asset==='nearCity')drawLights(ctx,{image:surface,x:0,y:0,w:surface.width,h:surface.height},WALL_LIGHTS,
         x,layer.bottom-layer.height,width+1,layer.height,time,Math.round((x+camera*layer.speed)/width)*19,'nearCity');
+      for(const [index,screen]of (CITY_SCREENS[layer.asset]||[]).entries()){
+        const [sx,sy,sw,sh]=screen.r;drawScreenAnimation(ctx,{image,x:0,y:0,w:image.width,h:image.height},screen.r,x+sx*width,layer.bottom-layer.height+sy*layer.height,sw*width,sh*layer.height,time,index*37,layer.asset);
+      }
     }
     ctx.restore();
+    if(['farCity','metropolisFar'].includes(layer.asset))drawCityTraffic(ctx,time,camera,canvas.width,layer.asset==='metropolisFar');
   }
   if(world?.kind==='port'){
     const water=ctx.createLinearGradient(0,GROUND-80,0,GROUND+15);water.addColorStop(0,'#193242');water.addColorStop(1,'#101d29');
     ctx.fillStyle=water;ctx.fillRect(0,GROUND-80,canvas.width,95);
     ctx.strokeStyle='#648c9933';ctx.lineWidth=1;
     for(let i=0;i<22;i++){const x=((i*137+time*8-camera*.15)%canvas.width+canvas.width)%canvas.width,y=GROUND-70+(i*19)%65;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+20+(i%4)*9,y);ctx.stroke();}
+    for(let x=Math.floor(camera*.3/400)*400;x<camera*.3+canvas.width;x+=400)drawVentSteam(ctx,x-camera*.3,GROUND-40,130,time,x);
   }
   return true;
 }
@@ -229,6 +241,7 @@ export function drawRasterEnvironment(ctx, canvas, world, mode, camera,time=0) {
     if (!c.open) drawProp(ctx, 6, c.x, c.y + 25, 36, 25,time);
     else { ctx.save(); ctx.globalAlpha = .5; drawProp(ctx, 6, c.x, c.y + 25, 36, 23,time); ctx.restore(); }
   }
+  drawSceneDust(ctx,camera,canvas.width,time,world,GROUND);
   return true;
 }
 
@@ -294,9 +307,22 @@ function drawLocation(ctx,canvas,world,camera,time){
       ambientGlow(ctx,d.x+d.w*.6,y+d.h*.26,d.w*.4,colour,.22*lightLevel(time,d.x,true));
     }
     if(d.kind==='vent')drawVentSteam(ctx,d.x+d.w*.67,y,d.h*.65,time,d.x);
+    if(d.kind==='vent'||d.kind==='maintenance'){
+      drawElectricalFault(ctx,d.x+d.w*.72,y+d.h*.43,time,d.x);
+      if(d.kind==='maintenance')drawVentSteam(ctx,d.x+d.w*.25,y+d.h*.3,32,time,d.x);
+    }
+    if(d.kind==='container')drawWarningBeacon(ctx,d.x+d.w-8,y+5,time,d.x);
+    if(d.kind==='foodStall'){
+      drawCookingSteam(ctx,d.x+d.w*.34,y+d.h*.61,55,time,d.x);
+      drawCookingSteam(ctx,d.x+d.w*.53,y+d.h*.64,40,time,d.x+17);
+      drawStallLights(ctx,d.x+d.w*.16,y+d.h*.31,d.w*.68,time,d.x);
+      ambientGlow(ctx,d.x+d.w*.5,y+d.h*.62,d.w*.4,'#ffb66c',.16);
+    }
+    if(d.kind==='techStall')drawScreenAnimation(ctx,prop(5,'locations'),[.42,.32,.39,.22],d.x+d.w*.42,y+d.h*.32,d.w*.39,d.h*.22,time,d.x,'techStall');
     if(d.kind==='apartment'){
       ctx.fillStyle='#10272c';ctx.fillRect(d.x+d.w*.73,y+d.h*.44,d.w*.20,d.h*.15);
       ctx.fillStyle='#71dadd';ctx.font='7px monospace';ctx.fillText(`${d.floor+1}-${Math.floor(d.x/10)%100}`,d.x+d.w*.74,y+d.h*.54);
+      drawHologram(ctx,d.x+d.w*.73,y+d.h*.44,d.w*.20,d.h*.15,time,d.x);
     }
   }
   for(const p of world.platforms){
@@ -351,5 +377,7 @@ function drawLocation(ctx,canvas,world,camera,time){
   for(const c of world.chests){ctx.save();if(c.open)ctx.globalAlpha=.45;drawProp(ctx,6,c.x,c.y+25,36,25,time);ctx.restore();}
   // Lamps remain sparse and fixed in world space; their positions vary with each layout.
   for(const lamp of world.lamps||[])if(lamp.x>camera-70&&lamp.x<camera+canvas.width+70)drawScaledProp(ctx,7,lamp.x,lamp.y,ACTOR_HEIGHT*2,time);
+  if(world.kind==='port')drawHarbourHaze(ctx,camera,canvas.width,time,GROUND);
+  drawSceneDust(ctx,camera,canvas.width,time,world,GROUND);
   return true;
 }

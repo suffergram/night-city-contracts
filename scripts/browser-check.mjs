@@ -75,6 +75,10 @@ try {
       const seed=await evaluate(`(()=>{for(let seed=1;seed<=80;seed++){if(levelPreview.generate(seed,'market').backdrop==='${backdrop}')return seed;}return null;})()`);
       assert.ok(seed);await evaluate('levelPreview.setCamera(450,0)');await screenshot('night-city-market-'+backdrop+'.png');
     }
+    await evaluate('levelPreview.generate(42,"market");const food=levelPreview.getWorld().decor.find(d=>d.kind==="foodStall");levelPreview.setCamera(Math.max(0,food.x-350),0);levelPreview.setTime(2.4)');
+    await screenshot('night-city-market-cooking.png');
+    await evaluate('levelPreview.generate(42,"port");levelPreview.setCamera(450,0);levelPreview.setTime(4.2)');
+    await screenshot('night-city-port-haze.png');
     assert.deepEqual(errors,[]);console.log('Level checks passed: four rendered themes, distinct seeded plans and vertical camera; no runtime exceptions.');
   }else if(process.argv.includes('--merchant-review')){
     await evaluate(`(async()=>{const {DEFAULT_PROFILE}=await import('/src/world.js');const p=structuredClone(DEFAULT_PROFILE);p.gold=2000;p.bag=[{id:'shop-review',type:'torso',name:'Арамидная куртка',rarity:1,power:5}];localStorage.setItem('emberfall-save-v1',JSON.stringify(p));})()`);
@@ -128,6 +132,16 @@ try {
   }else if(process.argv.includes('--environment-review')){
     await send('Page.navigate',{url:`http://127.0.0.1:${port}/scripts/environment-preview.html`});
     await until(()=>evaluate('window.environmentPreviewReady===true'));
+    assert.ok(await evaluate(`(async()=>{
+      const {drawScreenAnimation}=await import('/src/ambient.js');
+      const source=document.createElement('canvas');source.width=source.height=40;const a=source.getContext('2d');
+      a.fillStyle='#888888';a.fillRect(0,0,40,40);a.fillStyle='#20c8dc';a.fillRect(12,8,16,24);
+      const target=document.createElement('canvas');target.width=target.height=40;const x=target.getContext('2d');
+      drawScreenAnimation(x,{image:source,x:0,y:0,w:40,h:40},[0,0,1,1],0,0,40,40,2,1,'mask-regression');
+      const p=x.getImageData(0,0,40,40).data;let lit=0;
+      for(let yy=0;yy<40;yy++)for(let xx=0;xx<40;xx++){const alpha=p[(yy*40+xx)*4+3];if(xx<12||xx>=28||yy<8||yy>=32){if(alpha)return false;}else if(alpha)lit++;}
+      return lit>0;
+    })()`),'screen animation stays on emissive artwork without painting rectangles over walls');
     await evaluate('environmentPreview.setTime(0)');
     const still=await evaluate('document.querySelector("canvas").toDataURL()');
     await evaluate('environmentPreview.setTime(0)');assert.equal(await evaluate('document.querySelector("canvas").toDataURL()'),still);
