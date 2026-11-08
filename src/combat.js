@@ -1,4 +1,5 @@
 import { GROUND } from './world.js';
+import {useStairwell} from './stairwells.js';
 
 export const center = actor => ({ x: actor.x + actor.w / 2, y: actor.y + actor.h / 2 });
 export function findLadder(actor,world,direction=0,id=null) {
@@ -10,6 +11,7 @@ export function findLadder(actor,world,direction=0,id=null) {
 export function physics(actor, world, dt, stairId=undefined) {
   const acceptsStair=p=>!p.stair||stairId===undefined||p.stairId===stairId;
   actor.ladderCooldown=Math.max(0,(actor.ladderCooldown||0)-dt);
+  actor.stairwellCooldown=Math.max(0,(actor.stairwellCooldown||0)-dt);
   if(actor.climbing!=null&&!actor.climbIntent&&Math.abs(actor.vx)>1){actor.climbing=null;actor.ladderCooldown=.15;}
   const ladder=actor.climbing!=null?(world.ladders||[]).find(l=>l.id===actor.climbing):actor.climbIntent&&actor.ladderCooldown<=0?findLadder(actor,world,actor.climbIntent,actor.ladderTarget):null;
   if(ladder){
@@ -96,9 +98,11 @@ function followConnection(actor,player,world,dt) {
     actor.vx=Math.sign(dx)*Math.min(actor.speed,Math.abs(dx)/dt);
     if(connection.kind==='stairs'&&(ownFlight?.id===connection.id||Math.abs(dx)<22&&Math.abs(actor.y+actor.h-start.y)<24))r.phase='traverse';
     if(connection.kind==='ladder'&&targetGrounded&&Math.abs(dx)<18&&findLadder(actor,world,up?-1:1,connection.id))r.phase='traverse';
+    if(connection.kind==='stairwell'&&Math.abs(dx)<18&&actor.grounded&&Math.abs(actor.y+actor.h-start.y)<12)r.phase='traverse';
   }
   if(r.phase==='traverse'){
-    if(connection.kind==='ladder'){actor.vx=0;actor.climbIntent=up?-1:1;actor.ladderTarget=connection.id;actor.state='climb';}
+    if(connection.kind==='stairwell'){actor.vx=0;useStairwell(actor,connection,up);}
+    else if(connection.kind==='ladder'){actor.vx=0;actor.climbIntent=up?-1:1;actor.ladderTarget=connection.id;actor.state='climb';}
     else{
       const exitX=end.x+(up?connection.dir:-connection.dir)*(actor.w/2+6),dx=exitX-center(actor).x;
       actor.vx=Math.sign(dx)*Math.min(actor.speed,Math.abs(dx)/dt);

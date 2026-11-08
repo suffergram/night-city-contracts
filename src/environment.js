@@ -1,5 +1,9 @@
 import { GROUND } from './world.js';
 import { ACTOR_HEIGHT } from './weapons.js';
+import {createDressing,DETAIL_SPRITES} from './dressing.js';
+import {fitScenery,sceneryContactInset} from './scenery-sizes.js';
+import {marketCell,marketStyle,isMarketStall} from './market-stalls.js';
+import {MARKET_HOTELS} from './market-hotels.js';
 import {lightLevel,ambientGlow,drawLampAtmosphere,drawVentSteam,drawCityTraffic,drawHologram,drawScreenAnimation,drawCookingSteam,drawStallLights,drawHarbourHaze,drawElectricalFault,drawSceneDust,drawWarningBeacon} from './ambient.js';
 
 export const ENVIRONMENT_ASSETS = {
@@ -12,11 +16,17 @@ export const ENVIRONMENT_ASSETS = {
   interiorWall:new URL('../assets/environment/megablock-interior-v1.png',import.meta.url).href,
   metropolisFar:new URL('../assets/environment/metropolis-far-v1.png',import.meta.url).href,
   metropolisMid:new URL('../assets/environment/metropolis-mid-v1.png',import.meta.url).href,
+  life:new URL('../assets/environment/city-life-v1.png',import.meta.url).href,
+  worksite:new URL('../assets/environment/worksite-details-v1.png',import.meta.url).href,
+  market:new URL('../assets/environment/market-stalls-v1.png',import.meta.url).href,
+  hotelHourly:new URL('../assets/environment/market-hotel-hourly-v2.png',import.meta.url).href,
+  hotelLove:new URL('../assets/environment/market-hotel-love-v2.png',import.meta.url).href,
+  hotelBusiness:new URL('../assets/environment/market-hotel-business-v2.png',import.meta.url).href,
 };
 export const PARALLAX_LAYERS = [
   { asset: 'farCity', speed: .06, height: GROUND + 180, bottom: GROUND + 8, alpha: 1, filter: 'brightness(.75) saturate(.75)' },
   { asset: 'midCity', speed: .24, height: ACTOR_HEIGHT * 7, bottom: GROUND - 18, alpha: .78, filter: 'brightness(.75) saturate(.8)' },
-  { asset: 'nearCity', speed: .52, height: ACTOR_HEIGHT * 4.5, bottom: GROUND - 6, alpha: .94, filter: 'brightness(.82)' },
+  { asset: 'nearCity', speed: .52, height: ACTOR_HEIGHT * 4.5, bottom: GROUND + 3, alpha: .94, filter: 'brightness(.82)' },
 ];
 export const HUB_PARALLAX_LAYERS = [
   { asset:'metropolisFar',speed:.04,height:GROUND+220,bottom:GROUND+8,alpha:1,filter:'brightness(.82) saturate(.95)' },
@@ -75,20 +85,23 @@ function prop(index,atlas='props') {
   if (slices.has(key)) return slices.get(key);
   const image = images.get(atlas); if (!image) return null;
   const col = index % 4, row = Math.floor(index / 4);
-  const rows=atlas==='locations'?4:3;
-  const x = Math.round(col * image.width / 4), y = Math.round(row * image.height / rows);
-  const w = Math.round((col + 1) * image.width / 4) - x, h = Math.round((row + 1) * image.height / rows) - y;
+  const rows=atlas==='props'?3:4;
+  const cell=atlas.startsWith('hotel')?{x:0,y:0,w:image.width,h:image.height}:atlas==='market'?marketCell(index,image.width,image.height):{x:Math.round(col*image.width/4),y:Math.round(row*image.height/rows),w:Math.round((col+1)*image.width/4)-Math.round(col*image.width/4),h:Math.round((row+1)*image.height/rows)-Math.round(row*image.height/rows)};
+  const {x,y,w,h}=cell;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true }); ctx.drawImage(image, x, y, w, h, 0, 0, w, h);
   const pixels = ctx.getImageData(0, 0, w, h).data;
   let left = w, top = h, right = 0, bottom = 0;
-  for (let yy = 2; yy < h - 2; yy++) for (let xx = 2; xx < w - 2; xx++) if (pixels[(yy * w + xx) * 4 + 3] > 75) { left = Math.min(left, xx); top = Math.min(top, yy); right = Math.max(right, xx); bottom = Math.max(bottom, yy); }
-  const result = { image, x: x + left, y: y + top, w: Math.max(1, right - left + 1), h: Math.max(1, bottom - top + 1) };
+  const threshold=atlas==='life'||atlas==='worksite'?160:75;
+  for (let yy = 2; yy < h - 2; yy++) for (let xx = 2; xx < w - 2; xx++) if (pixels[(yy * w + xx) * 4 + 3] > threshold) { left = Math.min(left, xx); top = Math.min(top, yy); right = Math.max(right, xx); bottom = Math.max(bottom, yy); }
+  const result = { image, x: x + left, y: y + top, w: Math.max(1, right - left + 1), h: Math.max(1, bottom - top + 1),contactInset:sceneryContactInset(pixels,w,h,{left,top,right,bottom}) };
   slices.set(key, result); return result;
 }
 function drawProp(ctx, index, x, feet, width, height,time=0) {
   const p = prop(index); if (!p) return false;
   height ||= width * p.h / p.w;
+  const fitted=fitScenery(p.w,p.h,x,feet-height,width,height);x=fitted.x;width=fitted.w;height=fitted.h;
+  feet+=1+p.contactInset*height/p.h;
   ctx.drawImage(p.image, p.x, p.y, p.w, p.h, x, feet - height, width, height);
   drawLights(ctx,p,PROP_LIGHTS[index]||[],x,feet-height,width,height,time,index*137+Math.floor(x*3),'prop:'+index);
   for(const light of PROP_LIGHTS[index]||[])if(!light.lamp&&light.rect[2]>.15){
@@ -151,7 +164,7 @@ export function drawRasterBackdrop(ctx, canvas, camera,time=0,world=null,cameraY
   if(world?.kind==='megablock'){
     ctx.fillStyle='#0c101b';ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.save();ctx.translate(-camera,-cameraY);
-    const image=images.get('interiorWall'),rise=world.floorRise||190,bay=384;
+    const image=images.get('interiorWall'),rise=world.floorRise||190,bay=Math.round(rise*(image?image.width/image.height:1.5));
     const tileKey='interior:'+rise;
     if(image&&!layerSurfaces.has(tileKey)){
       const tile=document.createElement('canvas');tile.width=bay;tile.height=rise;
@@ -222,9 +235,10 @@ export function drawRasterEnvironment(ctx, canvas, world, mode, camera,time=0) {
   if (!images.has('props')) return false;
   if(mode!=='hub'&&world.kind)return drawLocation(ctx,canvas,world,camera,time);
   drawRoad(ctx,canvas,camera);
+  drawDetails(ctx,canvas,world,camera,time,mode==='hub'?'hub':'industrial');
   for (const platform of world.platforms) {
     if (platform.ground || platform.x + platform.w < camera - 30 || platform.x > camera + canvas.width + 30) continue;
-    drawProp(ctx, 5, platform.x, platform.y + 18, platform.w, 40,time);
+    drawDeck(ctx,platform.x,platform.y,platform.w,18);
   }
   for (let x = 180; x < world.width - 180; x += 410) {
     if (x < camera - 180 || x > camera + canvas.width + 100) continue;
@@ -246,10 +260,53 @@ export function drawRasterEnvironment(ctx, canvas, world, mode, camera,time=0) {
 }
 
 const locationKinds={container:0,cargo:1,crane:2,bollard:3,foodStall:4,techStall:5,produce:6,canopy:7,apartment:8,maintenance:9,vent:12,barrier:13};
+const detailLayouts=new WeakMap();
+const detailMaterials=new Map();
+function detailMaterial(p,def){
+  const key=def.atlas+':'+def.frame;
+  if(!detailMaterials.has(key)){
+    const c=document.createElement('canvas');c.width=p.w;c.height=p.h;const x=c.getContext('2d');
+    x.drawImage(p.image,p.x,p.y,p.w,p.h,0,0,p.w,p.h);
+    const pixels=x.getImageData(0,0,p.w,p.h),d=pixels.data;
+    for(let i=0;i<d.length;i+=4){
+      if(!d[i+3])continue;
+      const r=d[i],g=d[i+1],b=d[i+2],light=r*.2126+g*.7152+b*.0722;
+      const emission=Math.max(r,g,b)>150&&b>110&&Math.max(r,g,b)-Math.min(r,g,b)>60;
+      const gain=emission?.96:def.atlas==='worksite'?.72:.80,saturation=emission?.9:.65;
+      for(let channel=0;channel<3;channel++)d[i+channel]=(light+(d[i+channel]-light)*saturation)*gain*[.96,1,1.02][channel];
+    }
+    x.putImageData(pixels,0,0);detailMaterials.set(key,c);
+  }
+  return detailMaterials.get(key);
+}
+function drawDetails(ctx,canvas,world,camera,time,kind=world.kind){
+  let details=world.details;
+  if(!details){
+    let cached=detailLayouts.get(world);if(!cached){cached={};detailLayouts.set(world,cached);}
+    details=cached[kind] ||= createDressing(world,731,GROUND,kind);
+  }
+  for(const d of details){
+    if(d.x+d.w<camera-20||d.x>camera+canvas.width+20)continue;
+    const def=DETAIL_SPRITES[d.sprite],p=prop(def.frame,def.atlas);if(!p)continue;
+    const material=detailMaterial(p,def);
+    const y=d.y+(d.wall?0:1+p.contactInset*d.h/p.h);
+    ctx.save();
+    if(!d.wall){
+      ctx.fillStyle='#03080b50';ctx.beginPath();ctx.ellipse(d.x+d.w/2,d.floorY-.5,d.w*.42,1.5,0,0,Math.PI*2);ctx.fill();
+    }
+    if(d.mirror){ctx.translate(d.x+d.w,y);ctx.scale(-1,1);ctx.drawImage(material,0,0,p.w,p.h,0,0,d.w,d.h);}
+    else ctx.drawImage(material,0,0,p.w,p.h,d.x,y,d.w,d.h);
+    ctx.restore();
+    if(['vending','directionSign','menuBoard','portNotice'].includes(d.sprite))ambientGlow(ctx,d.x+d.w*.5,d.y+d.h*.3,d.w*.42,'#6fd9d8',.12*lightLevel(time,d.x));
+    if(d.sprite==='grill')drawCookingSteam(ctx,d.x+d.w*.45,d.y+8,30,time,d.x);
+  }
+}
 const locationVariants=new Map();
-function drawLocationProp(ctx,index,x,y,w,h,variant=0,interior=false){
-  const p=prop(index,'locations');if(!p)return;
-  if(interior&&(index===8||index===9)){
+function drawLocationProp(ctx,index,x,y,w,h,variant=0,interior=false,atlas='locations'){
+  const p=prop(index,atlas);if(!p)return;
+  const fitted=fitScenery(p.w,p.h,x,y,w,h);x=fitted.x;y=fitted.y;w=fitted.w;h=fitted.h;
+  y+=1+p.contactInset*h/p.h;
+  if(atlas==='locations'&&interior&&(index===8||index===9)){
     const key='interior-material:'+index;
     if(!locationVariants.has(key)){
       const c=document.createElement('canvas');c.width=p.w;c.height=p.h;
@@ -266,7 +323,7 @@ function drawLocationProp(ctx,index,x,y,w,h,variant=0,interior=false){
       a.putImageData(pixels,0,0);locationVariants.set(key,c);
     }
     ctx.drawImage(locationVariants.get(key),x,y,w,h);
-  }else if(index===0&&variant){
+  }else if(atlas==='locations'&&index===0&&variant){
     const key=index+':'+variant;if(!locationVariants.has(key)){
       const c=document.createElement('canvas');c.width=p.w;c.height=p.h;
       const a=c.getContext('2d');a.filter=['none','hue-rotate(140deg)','hue-rotate(230deg)','saturate(.25)','brightness(.7)'][variant%5];a.drawImage(p.image,p.x,p.y,p.w,p.h,0,0,p.w,p.h);locationVariants.set(key,c);
@@ -277,32 +334,34 @@ function drawLocationProp(ctx,index,x,y,w,h,variant=0,interior=false){
 function drawDeck(ctx,x,y,w,h){
   const p=prop(10,'locations');
   if(!p){ctx.fillStyle='#515868';ctx.fillRect(x,y,w,h);return;}
-  for(let xx=x;xx<x+w;xx+=130){const width=Math.min(130,x+w-xx);ctx.drawImage(p.image,p.x,p.y,p.w*width/130,p.h,xx,y,width,h);}
+  const tileWidth=p.w/p.h*h;
+  for(let xx=x;xx<x+w;xx+=tileWidth){const width=Math.min(tileWidth,x+w-xx);ctx.drawImage(p.image,p.x,p.y,p.w*width/tileWidth,p.h,xx,y,width,h);}
 }
 function drawLocation(ctx,canvas,world,camera,time){
   if(world.kind!=='megablock')drawRoad(ctx,canvas,camera);
   else{ctx.fillStyle='#080c15';ctx.fillRect(camera,GROUND,canvas.width,canvas.height+Math.abs(world.top));}
   const visible=o=>o.x+o.w>camera-100&&o.x<camera+canvas.width+100;
   for(const d of world.decor.filter(d=>d.kind==='crane'&&visible(d))){ctx.save();ctx.globalAlpha=.65;drawLocationProp(ctx,2,d.x,d.y-d.h,d.w,d.h);ctx.restore();}
-  // Market mezzanines are prefab rooms on ground-connected steel frames, not floating canopies.
-  for(const d of world.decor.filter(d=>d.kind==='marketUpper'&&visible(d))){
-    ctx.fillStyle='#405360';
-    for(const x of [d.x+3,d.x+d.w-8]){ctx.fillRect(x,d.y,7,GROUND-d.y);ctx.fillStyle='#88979b';ctx.fillRect(x+2,d.y,1,GROUND-d.y);ctx.fillStyle='#405360';}
-    drawDeck(ctx,d.x-5,d.y+d.h,d.w+10,9);
-  }
-  for(const d of world.decor){
+  drawDetails(ctx,canvas,world,camera,time);
+  for(const original of world.decor){
+    let d=original;
     if(d.kind==='crane'||!visible(d))continue;
-    if(d.kind==='marketUpper'){
-      drawLocationProp(ctx,0,d.x,d.y,d.w,d.h,d.variant||0);
-      drawLocationProp(ctx,8,d.x+d.w-86,d.y,86,d.h);
-      ctx.fillStyle='#12252d';ctx.fillRect(d.x+8,d.y+20,Math.max(35,d.w-100),16);
-      ctx.fillStyle='#67e6dd';ctx.font='7px monospace';ctx.fillText('РЕМОНТ',d.x+12,d.y+31);
-      ambientGlow(ctx,d.x+25,d.y+28,24,'#46ded5',.18*lightLevel(time,d.x));continue;
+    if(d.kind==='marketHotel'){
+      ctx.save();ctx.beginPath();ctx.rect(d.x-2,d.y-2,d.w+4,GROUND-d.y+3);ctx.clip();
+      drawLocationProp(ctx,0,d.x,d.y,d.w,d.h,0,false,MARKET_HOTELS[d.style].asset);
+      ctx.restore();
+      ambientGlow(ctx,d.x+d.w*.2,d.y+d.h*.42,40,'#e45b9d',.1*lightLevel(time,d.x,true));
+      continue;
     }
-    const under=['container','foodStall','techStall','canopy'].includes(d.kind);
-    const y=under?d.y:d.y-d.h;
-    drawLocationProp(ctx,locationKinds[d.kind]??9,d.x,y,d.w,d.h,d.variant||0,world.kind==='megablock');
-    if(['foodStall','techStall','apartment','maintenance'].includes(d.kind)){
+    const under=['container','canopy'].includes(d.kind)||isMarketStall(d.kind);
+    const style=isMarketStall(d.kind)?marketStyle(d):null;
+    const frame=style?.frame??locationKinds[d.kind]??9,atlas=style?.atlas||'locations',source=prop(frame,atlas);
+    const top=under?d.y:d.y-d.h,fitted=source?fitScenery(source.w,source.h,d.x,top,d.w,d.h):{x:d.x,y:top,w:d.w,h:d.h};
+    d={...d,x:fitted.x,w:fitted.w,h:fitted.h};const y=fitted.y;
+    if(d.kind==='produce'){ctx.save();ctx.filter='brightness(.78) saturate(.65)';}
+    drawLocationProp(ctx,frame,d.x,y,d.w,d.h,d.variant||0,world.kind==='megablock',atlas);
+    if(d.kind==='produce')ctx.restore();
+    if(isMarketStall(d.kind)||['apartment','maintenance'].includes(d.kind)){
       const colour=d.kind==='foodStall'?'#ff9e51':d.kind==='apartment'?'#e956b4':'#42dce5';
       ambientGlow(ctx,d.x+d.w*.6,y+d.h*.26,d.w*.4,colour,.22*lightLevel(time,d.x,true));
     }
@@ -313,12 +372,14 @@ function drawLocation(ctx,canvas,world,camera,time){
     }
     if(d.kind==='container')drawWarningBeacon(ctx,d.x+d.w-8,y+5,time,d.x);
     if(d.kind==='foodStall'){
+      if(style?.cooking!==false){
       drawCookingSteam(ctx,d.x+d.w*.34,y+d.h*.61,55,time,d.x);
       drawCookingSteam(ctx,d.x+d.w*.53,y+d.h*.64,40,time,d.x+17);
+      }
       drawStallLights(ctx,d.x+d.w*.16,y+d.h*.31,d.w*.68,time,d.x);
       ambientGlow(ctx,d.x+d.w*.5,y+d.h*.62,d.w*.4,'#ffb66c',.16);
     }
-    if(d.kind==='techStall')drawScreenAnimation(ctx,prop(5,'locations'),[.42,.32,.39,.22],d.x+d.w*.42,y+d.h*.32,d.w*.39,d.h*.22,time,d.x,'techStall');
+    if(d.kind==='techStall')drawScreenAnimation(ctx,source,[.42,.32,.39,.22],d.x+d.w*.42,y+d.h*.32,d.w*.39,d.h*.22,time,d.x,atlas+':'+frame);
     if(d.kind==='apartment'){
       ctx.fillStyle='#10272c';ctx.fillRect(d.x+d.w*.73,y+d.h*.44,d.w*.20,d.h*.15);
       ctx.fillStyle='#71dadd';ctx.font='7px monospace';ctx.fillText(`${d.floor+1}-${Math.floor(d.x/10)%100}`,d.x+d.w*.74,y+d.h*.54);
@@ -370,7 +431,8 @@ function drawLocation(ctx,canvas,world,camera,time){
     ctx.restore();
   }
   for(const l of world.ladders)if(l.x>camera-30&&l.x<camera+canvas.width+30){
-    drawLocationProp(ctx,11,l.x-12,l.top,24,l.bottom-l.top);
+    const p=prop(11,'locations');
+    if(p){const tileHeight=24*p.h/p.w;for(let yy=l.top;yy<l.bottom;yy+=tileHeight){const h=Math.min(tileHeight,l.bottom-yy);ctx.drawImage(p.image,p.x,p.y,p.w,p.h*h/tileHeight,l.x-12,yy,24,h);}}
     ambientGlow(ctx,l.x,l.top+6,12,'#5aede6',.13);
   }
   drawScaledProp(ctx,HUMAN_SCALE.gate.index,world.portal.x,world.portal.y,HUMAN_SCALE.gate.height,time);

@@ -6,6 +6,7 @@ import { advanceAnimation, animationInfo } from './animation.js';
 import { preloadSprites, previewMarkup, paintPreviews } from './raster.js';
 import { aimAngle, aimedMuzzle, aimDirection } from './aim.js';
 import { preloadEnvironment } from './environment.js';
+import {findStairwell,useStairwell} from './stairwells.js';
 import { ACTOR_HEIGHT, WEAPONS, weaponSlots, slotForKey, rifleSpread, coolRifle, fireInterval } from './weapons.js';
 
 const $ = id => document.getElementById(id);
@@ -221,6 +222,11 @@ function drink() {
 }
 function interact() {
   if (!target) return;
+  if(target.kind==='stairwell'){
+    const {connection,up}=target.object;
+    if(useStairwell(player,connection,up)){findTarget();toast(up?'Второй этаж':'Первый этаж');}
+    return;
+  }
   if (target.kind === 'merchant') merchant();
   if (target.kind === 'trainer') trainer();
   if (target.kind === 'medbay') { player.hp = stats(profile).maxHp; player.stamina = stats(profile).maxStamina; updateUI(); toast('Медстанция: биометрия восстановлена.'); }
@@ -473,6 +479,8 @@ function findTarget() {
   const candidates = [{ kind: 'portal', x: world.portal.x, y: world.portal.y - 30, label: mode === 'hub' ? `Контракт · Угроза ${recommendedDepth(profile)}` : world.kills === world.enemies.length ? 'Эвакуация / Следующий сектор' : 'Терминал заблокирован' }];
   if (mode === 'hub') candidates.push({ kind: 'merchant', x: 325, y: GROUND - 30, label: 'Мира · Оружейник' }, { kind: 'trainer', x: 800, y: GROUND - 30, label: 'Орин · Рипер' }, { kind: 'medbay', x: 580, y: GROUND - 15, label: 'Медстанция · Восстановление' });
   for (const c of world.chests) if (!c.open) candidates.push({ kind: 'chest', x: c.x, y: c.y, label: 'Вскрыть тайник', object: c });
+  const stairwell=findStairwell(player,world);
+  if(stairwell)candidates.unshift({kind:'stairwell',x:stairwell.start.x,y:stairwell.start.y-player.h/2,label:stairwell.up?'Внутренняя лестница · На второй этаж':'Внутренняя лестница · На первый этаж',object:stairwell});
   target = candidates.filter(t => Math.abs(t.x - center(player).x) < 77 && Math.abs(t.y - center(player).y) < 65).sort((a, b) => Math.abs(a.x - player.x) - Math.abs(b.x - player.x))[0];
   $('interaction').classList.toggle('hidden', !target); if (target) $('interaction').innerHTML = `<kbd>E</kbd> ${target.label}`;
 }

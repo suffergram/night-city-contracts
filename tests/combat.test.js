@@ -2,6 +2,32 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GROUND, generateLevel } from '../src/world.js';
 import { center, incomingDamage, physics, segmentHit, projectile, updateEnemies,findLadder,lineOfSight } from '../src/combat.js';
+import {findStairwell,useStairwell} from '../src/stairwells.js';
+
+test('hotel internal stairs work in both directions only from the correct grounded doorway',()=>{
+  for(const style of ['hourly','love','business']){
+    let w,c;for(let seed=1;seed<100;seed++){w=generateLevel(1,seed,'market');const h=w.decor.find(d=>d.kind==='marketHotel'&&d.style===style);if(h){c=w.connections.find(c=>c.kind==='stairwell'&&c.upper.y===w.platforms[h.balconyId].y);break;}}
+    assert.ok(c);const a={...player(),x:c.lower.x-13.5,grounded:true};
+    assert.equal(findStairwell({...a,grounded:false},w),null);
+    assert.equal(useStairwell({...a,x:a.x-100},c,true),false);
+    assert.ok(findStairwell(a,w).up);assert.ok(useStairwell(a,c,true));
+    assert.equal(a.y+a.h,c.upper.y);assert.equal(center(a).x,c.upper.x);
+    assert.equal(useStairwell(a,c,false),false,'no immediate bounce back');
+    for(let i=0;i<60;i++)physics(a,w,1/120);
+    assert.equal(findStairwell(a,w).up,false);assert.ok(useStairwell(a,c,false));assert.equal(a.y+a.h,GROUND);
+  }
+});
+
+test('enemies can pursue through hotel internal stairs in either direction',()=>{
+  const w=generateLevel(1,42,'market'),c=w.connections.find(c=>c.kind==='stairwell');
+  for(const up of [true,false]){
+    const start=up?c.lower:c.upper,end=up?c.upper:c.lower,e=enemy('heavy',start.x),p=player();
+    Object.assign(e,{x:start.x-e.w/2,y:start.y-e.h,grounded:true,cooldown:999,jumpCooldown:999});
+    Object.assign(p,{x:end.x-p.w/2,y:end.y-p.h,grounded:true});w.enemies=[e];
+    for(let i=0;i<900&&Math.abs(e.y+e.h-end.y)>1;i++)updateEnemies(w,p,[],1/120,()=>{});
+    assert.ok(Math.abs(e.y+e.h-end.y)<1,'enemy reaches the other floor');assert.equal(e.climbing,null);
+  }
+});
 
 test('ladders support ascent, hanging in place and descent between real generated floors',()=>{
   const w=generateLevel(1,23,'megablock'),l=w.ladders[0],a={...player(),x:l.x-13.5,y:l.bottom-74,climbing:null,climbIntent:-1};

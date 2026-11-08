@@ -57,9 +57,40 @@ try {
   await send('Page.navigate', { url: `http://127.0.0.1:${port}` });
   await until(() => evaluate("document.getElementById('scene-title')?.textContent.includes('Убежище') && document.getElementById('equipment')?.children.length===3"));
   await evaluate("import('/src/raster.js').then(m=>m.preloadSprites())");
-  if(process.argv.includes('--level-review')){
+  if(process.argv.includes('--detail-metadata')){
+    const metadata=await evaluate(`(async()=>{
+      const {ENVIRONMENT_ASSETS}=await import('/src/environment.js'),out={};
+      const {marketCell}=await import('/src/market-stalls.js');
+      for(const id of ['life','worksite','locations','nearCity','market','hotelHourly','hotelLove','hotelBusiness']){
+        const im=new Image();im.src=ENVIRONMENT_ASSETS[id];await im.decode();const c=document.createElement('canvas');c.width=im.width;c.height=im.height;const x=c.getContext('2d');x.drawImage(im,0,0);
+        const pixels=x.getImageData(0,0,c.width,c.height).data,frames=[];
+        const single=id==='nearCity'||id.startsWith('hotel');
+        for(let frame=0;frame<(single?1:id==='market'?9:16);frame++){
+          const cell=id==='market'?marketCell(frame,c.width,c.height):null;
+          const sx=cell?.x??(single?0:Math.round(frame%4*c.width/4)),sy=cell?.y??(single?0:Math.round(Math.floor(frame/4)*c.height/4));
+          const w=cell?.w??(single?c.width:Math.round((frame%4+1)*c.width/4)-sx),h=cell?.h??(single?c.height:Math.round((Math.floor(frame/4)+1)*c.height/4)-sy);
+          let left=w,top=h,right=0,bottom=0;
+          for(let yy=2;yy<h-2;yy++)for(let xx=2;xx<w-2;xx++)if(pixels[((sy+yy)*c.width+sx+xx)*4+3]>(['life','worksite'].includes(id)?160:75)){left=Math.min(left,xx);right=Math.max(right,xx);top=Math.min(top,yy);bottom=Math.max(bottom,yy);}
+          let contact=bottom;
+          for(let yy=bottom;yy>=top;yy--){let count=0;for(let xx=left;xx<=right;xx++)count+=pixels[((sy+yy)*c.width+sx+xx)*4+3]>160;if(count>=Math.max(3,(right-left+1)*.08)){contact=yy;break;}}
+          frames.push({frame,w:right-left+1,h:bottom-top+1,left,top,bottom:bottom+1,sourceH:h,inset:bottom-contact});
+        }out[id]=frames;
+      }return out;
+    })()`);console.log(JSON.stringify(metadata));
+  }else if(process.argv.includes('--level-review')){
     await send('Page.navigate',{url:`http://127.0.0.1:${port}/scripts/level-preview.html`});
     await until(()=>evaluate('window.levelPreviewReady===true'));
+    assert.ok(await evaluate(`(async()=>{
+      const {drawRasterEnvironment}=await import('/src/environment.js'),{generateLevel}=await import('/src/world.js');
+      const c=document.createElement('canvas');c.width=1200;c.height=660;const ctx=c.getContext('2d'),draw=ctx.drawImage.bind(ctx);let bad=0,checked=0;
+      ctx.drawImage=(source,...a)=>{
+        if(source.src&&/locations-v1|props-dry-v2|market-stalls-v1|market-hotel-/.test(source.src)&&a.length===8){checked++;if(Math.abs(a[6]/a[2]-a[7]/a[3])>1e-7)bad++;}
+        draw(source,...a);
+      };
+      for(const kind of ['industrial','port','market','megablock'])drawRasterEnvironment(ctx,c,generateLevel(1,42,kind),'expedition',450,2);
+      drawRasterEnvironment(ctx,c,{width:1400,platforms:[],chests:[],portal:{x:1150}},'hub',0,2);
+      return checked>40&&bad===0;
+    })()`),'rendered props, deck segments and ladder segments preserve source proportions');
     const layouts=[];
     for(const kind of ['industrial','port','market','megablock']){
       const summary=await evaluate(`(()=>{const w=levelPreview.generate(42,'${kind}');return {kind:w.kind,chests:w.chests,floors:w.floors,top:w.top,width:w.width};})()`);
@@ -77,6 +108,10 @@ try {
     }
     await evaluate('levelPreview.generate(42,"market");const food=levelPreview.getWorld().decor.find(d=>d.kind==="foodStall");levelPreview.setCamera(Math.max(0,food.x-350),0);levelPreview.setTime(2.4)');
     await screenshot('night-city-market-cooking.png');
+    for(const style of ['hourly','love','business']){
+      assert.ok(await evaluate(`(()=>{for(let seed=1;seed<=100;seed++){const w=levelPreview.generate(seed,'market'),h=w.decor.find(d=>d.kind==='marketHotel'&&d.style==='${style}');if(h){levelPreview.setCamera(Math.max(0,h.x-350),0);levelPreview.setTime(2.4);return true;}}return false;})()`));
+      await screenshot('night-city-market-hotel-'+style+'.png');
+    }
     await evaluate('levelPreview.generate(42,"port");levelPreview.setCamera(450,0);levelPreview.setTime(4.2)');
     await screenshot('night-city-port-haze.png');
     assert.deepEqual(errors,[]);console.log('Level checks passed: four rendered themes, distinct seeded plans and vertical camera; no runtime exceptions.');
@@ -132,6 +167,15 @@ try {
   }else if(process.argv.includes('--environment-review')){
     await send('Page.navigate',{url:`http://127.0.0.1:${port}/scripts/environment-preview.html`});
     await until(()=>evaluate('window.environmentPreviewReady===true'));
+    assert.ok(await evaluate(`(async()=>{
+      const {ENVIRONMENT_ASSETS}=await import('/src/environment.js');
+      for(const id of ['life','worksite','market','hotelHourly','hotelLove','hotelBusiness']){
+        const i=new Image();i.src=ENVIRONMENT_ASSETS[id];await i.decode();const c=document.createElement('canvas');c.width=i.width;c.height=i.height;
+        const x=c.getContext('2d');x.drawImage(i,0,0);const p=x.getImageData(0,0,c.width,c.height).data;let clear=0,solid=0;
+        for(let j=3;j<p.length;j+=4){clear+=p[j]<5;solid+=p[j]>200;}
+        if(p[3]>5||clear<c.width*c.height*.12||solid<c.width*c.height*.12)return false;
+      }return true;
+    })()`),'detail atlases have true cutout transparency and intact solid artwork');
     assert.ok(await evaluate(`(async()=>{
       const {drawScreenAnimation}=await import('/src/ambient.js');
       const source=document.createElement('canvas');source.width=source.height=40;const a=source.getContext('2d');

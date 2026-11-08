@@ -11,13 +11,14 @@ import {preloadSprites,drawRasterActor} from '../src/raster.js';
 import {GROUND,DEFAULT_PROFILE} from '../src/world.js';
 const canvas=document.getElementById('preview'),ctx=canvas.getContext('2d');
 const world={width:4000,platforms:[],chests:[],portal:{x:2100}};
+const hubWorld={width:1400,platforms:[],chests:[],portal:{x:1150,y:GROUND}};
 let time=0,last=0,playing=true;
 await Promise.all([preloadEnvironment(),preloadSprites()]);
 function draw(){
   const camera=Number(document.getElementById('camera').value),mode=document.getElementById('scene').value;
   ctx.fillStyle='#101528';ctx.fillRect(0,0,canvas.width,canvas.height);
-  drawRasterBackdrop(ctx,canvas,camera,time,mode==='hub'?world:{kind:'industrial'});ctx.save();ctx.translate(-camera,0);
-  drawRasterEnvironment(ctx,canvas,world,mode,camera,time);
+  drawRasterBackdrop(ctx,canvas,camera,time,mode==='hub'?hubWorld:{kind:'industrial'});ctx.save();ctx.translate(-camera,0);
+  drawRasterEnvironment(ctx,canvas,mode==='hub'?hubWorld:world,mode,camera,time);
   for(const x of [220,1050,1900,2800])if(x>camera-100&&x<camera+canvas.width+100){ctx.save();ctx.translate(x,GROUND);drawRasterActor(ctx,{grounded:true,animation:{name:'idle',time}},'hero',DEFAULT_PROFILE.equipment,{height:60});ctx.restore();}
   ctx.restore();
 }

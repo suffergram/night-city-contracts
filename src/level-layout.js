@@ -1,3 +1,6 @@
+import {locationSize} from './scenery-sizes.js';
+import {MARKET_STALLS,marketStallSize,stallAdvance} from './market-stalls.js';
+import {MARKET_HOTELS,hotelSize,hotelSink} from './market-hotels.js';
 export const LEVEL_KINDS={
   industrial:{name:'Промзона Уотсона',hint:'Технические площадки и переходы'},
   port:{name:'Грузовой порт',hint:'Контейнеры, краны и грузовые мостки'},
@@ -10,7 +13,8 @@ export function createLayout(rng,ground,forcedKind) {
   const width=kind==='megablock'?integer(23,31)*100:integer(24,39)*100;
   const layout={kind,width,platforms:[{id:0,x:0,y:ground,w:width,h:150,ground:true}],ladders:[],stairs:[],connections:[],decor:[],rooms:[],lamps:[],wallLights:[]};
   const surface=(x,y,w,extra={})=>{
-    x=Math.max(24,Math.round(x));w=Math.min(Math.round(w),width-24-x);
+    const native=['stall','hotelBalcony','hotelRoof'].includes(extra.art);
+    x=Math.max(24,native?x:Math.round(x));w=Math.min(native?w:Math.round(w),width-24-x);
     const p={id:layout.platforms.length,x,y:Math.round(y),w,h:18,...extra};layout.platforms.push(p);return p;
   };
   const ladder=(lower,upper,x)=>{
@@ -65,27 +69,52 @@ export function createLayout(rng,ground,forcedKind) {
   }else if(kind==='port'){
     let group=0;
     for(let x=300;x<width-260;x+=integer(310,430)){
-      const tiers=integer(1,3),w=integer(180,255),h=85;let lower=layout.platforms[0];
+      const tiers=integer(1,3),h=85,w=locationSize(0,h).w;let lower=layout.platforms[0];
       for(let tier=0;tier<tiers;tier++){
-        const xx=x+tier*integer(8,16),p=surface(xx,ground-(tier+1)*h,w-tier*15,{art:'container'});
-        layout.decor.push({kind:'container',x:p.x,y:p.y,w:p.w,h,variant:integer(0,4)});
+        const xx=x+tier*integer(8,16),p=surface(xx,ground-(tier+1)*h,w,{art:'container'});
+        layout.decor.push({kind:'container',x:p.x,y:p.y,w,h,variant:integer(0,4)});
         ladder(lower,p,p.x+24);
         lower=p;
       }
       layout.decor.push({kind:'cargo',x:x-70,y:ground,w:integer(65,100),h:integer(40,65)});
-      if(group++%2===0)layout.decor.push({kind:'crane',x:x-100,y:ground-15,w:260,h:300});
+      if(group++%2===0)layout.decor.push({kind:'crane',x:x-100,y:ground,w:260,h:300});
     }
   }else if(kind==='market'){
-    let group=0;
-    for(let x=260;x<width-260;x+=integer(245,335)){
-      const p=surface(x,ground-105,integer(150,205),{art:'stall'});
-      layout.decor.push({kind:rng()<.5?'techStall':'foodStall',x:p.x,y:p.y,w:p.w,h:105});
-      if(group++%2===0)ladder(layout.platforms[0],p,p.x+18);
-      if(rng()<.55){
-        const upper=surface(x+15,ground-210,p.w-15,{art:'pavilionRoof'});
-        layout.decor.push({kind:'marketUpper',x:upper.x,y:upper.y,w:upper.w,h:105,supportId:p.id,variant:integer(0,4)});ladder(p,upper,p.x+45);
+    const themes=['foodStall','techStall','clothesStall'];
+    for(let i=themes.length-1;i>0;i--){const j=integer(0,i);[themes[i],themes[j]]=[themes[j],themes[i]];}
+    const styles=kind=>Object.keys(MARKET_STALLS).filter(key=>MARKET_STALLS[key].kind===kind);
+    let x=integer(215,275),group=0,lastStyle=null,hotels=0;layout.marketGroups=[];
+    while(x<width-350){
+      const theme=group<3?themes[group]:pick(themes),count=integer(2,3),plan=[];
+      for(let member=0;member<count;member++){
+        const kind=member===0||rng()<.78?theme:pick(themes),choices=styles(kind).filter(id=>id!==lastStyle),style=pick(choices);
+        plan.push({style,kind,...marketStallSize(style),gap:rng()<.6?0:integer(4,16)});lastStyle=style;
       }
-      layout.decor.push({kind:'produce',x:p.x+p.w+12,y:ground,w:integer(38,65),h:integer(25,45)});
+      const length=()=>plan.reduce((sum,s,i)=>sum+(i?stallAdvance(plan[i-1],s,plan[i-1].gap):0),0)+plan.at(-1).w;
+      const budget=group<3?(width-x-170-(2-group)*80)/(3-group):width-x-150;
+      if(plan.length===3&&length()>budget)plan.pop();
+      if(x+length()>width-150)break;
+      const start=x;
+      for(const [member,s]of plan.entries()){
+        const p=surface(x,ground-s.h,s.w,{art:'stall'});
+        layout.decor.push({kind:s.kind,style:s.style,x:p.x,y:p.y,w:s.w,h:s.h,platformId:p.id,group});
+        if(member===0)ladder(layout.platforms[0],p,p.x+14);
+        x=p.x+(member<plan.length-1?stallAdvance(s,plan[member+1],s.gap):s.w);
+      }
+      layout.marketGroups.push({id:group,x:start,w:x-start,count:plan.length,theme});
+      x+=integer(75,185);group++;
+      if(group===1||group===4&&hotels<2&&rng()<.55){
+        const style=pick(Object.keys(MARKET_HOTELS)),def=MARKET_HOTELS[style],size=hotelSize(style);
+        if(x+size.w<width-650){
+          const y=ground-size.h+hotelSink(style);
+          const balcony=surface(x+size.w*.04,y+size.h*def.balcony,size.w*.92,{art:'hotelBalcony'});
+          const roof=surface(x+size.w*.04,y+size.h*def.roof,size.w*.92,{art:'hotelRoof'});
+          layout.decor.push({kind:'marketHotel',style,x,y,...size,balconyId:balcony.id,roofId:roof.id});
+          layout.connections.push({kind:'stairwell',id:hotels,lower:{x:x+size.w*def.entry,y:ground},upper:{x:x+size.w*def.exit,y:balcony.y}});
+          ladder(balcony,roof,x+size.w*.93);
+          x+=size.w+integer(85,170);hotels++;
+        }
+      }
     }
   }else{
     for(let x=300;x<width-280;x+=integer(220,340)){
@@ -125,6 +154,7 @@ export function createLayout(rng,ground,forcedKind) {
     }
   }else{
     for(let x=integer(150,250);x<width-90;x+=integer(420,600))layout.lamps.push({x,y:ground});
+    if(kind==='market')layout.lamps=layout.lamps.filter(l=>!layout.decor.some(d=>d.kind==='marketHotel'&&l.x>d.x-15&&l.x<d.x+d.w+15));
   }
   layout.name=LEVEL_KINDS[kind].name;layout.flavour=pick(['Северный сектор','Техническое крыло','Восточная линия','Закрытый периметр']);
   // Pick once for the contract; never reroll while scrolling or drawing.

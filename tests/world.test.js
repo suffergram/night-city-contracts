@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GROUND, BAG_LIMIT, BALANCE, SLOTS, DEFAULT_PROFILE, stats, random, generateLevel, makeItem, loadProfile, addXp, recommendedDepth, enemyReward, trainingCost } from '../src/world.js';
+import {MARKET_HOTELS,hotelSize,hotelSink} from '../src/market-hotels.js';
 
 function walkableNodes(world) {
   return world.platforms.flatMap(p=>{
@@ -18,6 +19,7 @@ function reachableNodes(w) {
       const flight=rise<=138?(620+Math.sqrt(620**2-2*1330*rise))/1330:0;
       let reachable=flight>0&&gap<245*flight-25;
       if(!reachable)reachable=w.ladders.some(l=>((p.y===l.bottom&&q.y===l.top)||(p.y===l.top&&q.y===l.bottom))&&l.x>=p.x&&l.x<=p.x+p.w&&l.x>=q.x&&l.x<=q.x+q.w);
+      if(!reachable)reachable=w.connections.some(c=>c.kind==='stairwell'&&[[c.lower,c.upper],[c.upper,c.lower]].some(([a,b])=>p.y===a.y&&q.y===b.y&&a.x>=p.x&&a.x<=p.x+p.w&&b.x>=q.x&&b.x<=q.x+q.w));
       if(reachable){seen.add(i);queue.push(i);}
     }
   }
@@ -58,19 +60,29 @@ test('market rolls its backdrop once per seed with an even split; other location
   for(const kind of ['industrial','port','megablock'])assert.equal(generateLevel(1,42,kind).backdrop,'district');
 });
 
-test('market upper rooms rest on stalls and street lights always stand on the ground',()=>{
-  let rooms=0;
+test('market hotels are complete ground-standing buildings with reachable balconies and roofs',()=>{
+  const variants=new Set();let count=0;
   for(let seed=1;seed<=60;seed++){
     const w=generateLevel(1,seed,'market');
     assert.ok(w.lamps.length>0);assert.ok(w.lamps.every(l=>l.y===GROUND));
     assert.ok(!w.decor.some(d=>d.kind==='canopy'&&d.y+d.h<GROUND));
-    for(const d of w.decor.filter(d=>d.kind==='marketUpper')){
-      rooms++;const base=w.platforms.find(p=>p.id===d.supportId);
-      assert.equal(d.y+d.h,base.y);assert.ok(d.x>=base.x&&d.x+d.w<=base.x+base.w);
-      assert.ok(w.decor.some(s=>['foodStall','techStall'].includes(s.kind)&&s.x===base.x&&s.y+s.h===GROUND));
+    assert.ok(!w.decor.some(d=>d.kind==='marketUpper'));
+    const hotels=w.decor.filter(d=>d.kind==='marketHotel');assert.ok(hotels.length>=1&&hotels.length<=2);
+    for(const d of hotels){
+      count++;variants.add(d.style);const def=MARKET_HOTELS[d.style],size=hotelSize(d.style);
+      assert.ok(Math.abs(d.y+d.h-GROUND-hotelSink(d.style))<1e-7);assert.equal(d.w,size.w);assert.equal(d.h,size.h);
+      assert.ok(Math.abs(d.w/d.h-def.size[0]/def.size[1])<1e-7);
+      const balcony=w.platforms.find(p=>p.id===d.balconyId),roof=w.platforms.find(p=>p.id===d.roofId);
+      assert.ok(balcony.y<GROUND&&roof.y<balcony.y);
+      assert.ok(GROUND-balcony.y>=119,'ground storey stands above the 105px stalls');
+      assert.ok(w.connections.some(c=>c.kind==='stairwell'&&c.upper.y===balcony.y&&c.lower.y===GROUND));
+      assert.ok(!w.ladders.some(l=>l.top===balcony.y&&l.bottom===GROUND&&l.x>d.x&&l.x<d.x+d.w));
+      assert.ok(w.ladders.some(l=>l.top===roof.y&&l.bottom===balcony.y));
+      assert.ok(w.lamps.every(l=>l.x<d.x-15||l.x>d.x+d.w+15));
+      assert.ok(w.decor.every(s=>s===d||s.x+s.w<=d.x||s.x>=d.x+d.w));
     }
   }
-  assert.ok(rooms>60);
+  assert.ok(count>=60);assert.equal(variants.size,3);
 });
 test('megablock uses wall lights on every floor instead of street poles',()=>{
   for(let seed=1;seed<=30;seed++){

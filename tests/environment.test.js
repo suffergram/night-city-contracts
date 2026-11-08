@@ -99,6 +99,10 @@ test('interactive doorway proportions stay close to the actor instead of scaling
     assert.ok(doorHeight>=ACTOR_HEIGHT*1.2);assert.ok(doorHeight<=ACTOR_HEIGHT*1.6);
   }
 });
+
+test('nearest background continues below the street edge in both city profiles',()=>{
+  for(const layers of [PARALLAX_LAYERS,HUB_PARALLAX_LAYERS])assert.ok(layers.find(l=>l.asset==='nearCity').bottom>=538+2);
+});
 test('ranged weapons have separate capacities and distinct firing roles',()=>{
   assert.equal(WEAPONS.gun.magazine,10);assert.equal(WEAPONS.rifle.magazine,24);assert.equal(WEAPONS.shotgun.magazine,6);
   assert.ok(WEAPONS.rifle.interval<WEAPONS.gun.interval);assert.ok(WEAPONS.shotgun.interval>WEAPONS.gun.interval);

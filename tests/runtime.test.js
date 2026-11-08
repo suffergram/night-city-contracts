@@ -12,6 +12,7 @@ import { preloadSprites, previewMarkup, paintPreviews, muzzleAnchor } from '../s
 import { preloadEnvironment } from '../src/environment.js';
 import * as weapons from '../src/weapons.js';
 import * as aiming from '../src/aim.js';
+import * as stairwells from '../src/stairwells.js';
 
 async function boot(saved) {
   const gradient = { addColorStop() {} };
@@ -27,7 +28,7 @@ async function boot(saved) {
     }); return elements.get(id);
   };
   const storage = new Map(saved ? [['emberfall-save-v1', saved]] : []);
-  const context = vm.createContext({ ...worldModule, ...combat, ...skills, ...weapons, ...aiming, mercenarySvg, advanceAnimation, animationInfo, preloadEnvironment, preloadSprites, previewMarkup, paintPreviews, muzzleAnchor, drawWorld, drawMinimap, console, Math, JSON, Date, structuredClone,
+  const context = vm.createContext({ ...worldModule, ...combat, ...skills, ...weapons, ...aiming, ...stairwells, mercenarySvg, advanceAnimation, animationInfo, preloadEnvironment, preloadSprites, previewMarkup, paintPreviews, muzzleAnchor, drawWorld, drawMinimap, console, Math, JSON, Date, structuredClone,
     document: { getElementById: element, querySelector: element, querySelectorAll: () => [], addEventListener() {} }, window: { addEventListener(name, cb) { events[name] = cb; } },
     localStorage: { getItem: k => storage.get(k), setItem: (k, v) => storage.set(k, v) },
     setTimeout: () => 1, clearTimeout() {}, requestAnimationFrame() {}, ResizeObserver: class { observe() {} },
@@ -47,6 +48,15 @@ test('game boots, renders the cyberpunk hub, moves, jumps, trades and persists u
   run('merchant()'); click('potion'); assert.equal(run('profile.gold'), 25); assert.equal(run('profile.potions'), 4);
   run('profile.gold=200; trainer()'); click('strength'); assert.equal(run('profile.strength'), 1); assert.equal(run('profile.gold'), 80);
   assert.equal(JSON.parse(storage.get('emberfall-save-v1')).version, 4);
+});
+
+test('E uses the hotel entrance and returns through the upper exit without opening a modal',async()=>{
+  const {run,tick}=await boot();
+  run(`mode='expedition';world=generateLevel(1,42,'market');world.enemies.forEach(e=>e.dead=true);const stairs=world.connections.find(c=>c.kind==='stairwell');Object.assign(player,{x:stairs.lower.x-player.w/2,y:stairs.lower.y-player.h,grounded:true,stairwellCooldown:0});findTarget();`);
+  assert.equal(run('target.kind'),'stairwell');run("press('e')");
+  assert.equal(run('player.y+player.h'),run('stairs.upper.y'));assert.equal(run('modal'),null);
+  tick(60);run('findTarget()');assert.equal(run('target.kind'),'stairwell');run("press('e')");
+  assert.equal(run('player.y+player.h'),worldModule.GROUND);assert.equal(run('modal'),null);
 });
 
 test('Tab opens the character window in gameplay and keeps keyboard navigation inside menus',async()=>{
