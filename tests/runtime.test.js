@@ -49,6 +49,58 @@ test('game boots, renders the cyberpunk hub, moves, jumps, trades and persists u
   assert.equal(JSON.parse(storage.get('emberfall-save-v1')).version, 4);
 });
 
+test('Tab opens the character window in gameplay and keeps keyboard navigation inside menus',async()=>{
+  const {run,events}=await boot();let prevented=false;
+  events.keydown({code:'Tab',preventDefault(){prevented=true;}});
+  assert.equal(run('modal'),'inventory');assert.ok(prevented);
+  prevented=false;events.keydown({code:'Tab',preventDefault(){prevented=true;}});
+  assert.equal(run('modal'),'inventory');assert.equal(prevented,false,'Tab remains available for focus navigation');
+  run('closeModal();');events.keydown({code:'Tab',shiftKey:true,preventDefault(){}});assert.equal(run('modal'),null);
+  events.keydown({code:'Tab',ctrlKey:true,preventDefault(){}});assert.equal(run('modal'),null);
+  run('expedition(1);');events.keydown({code:'Tab',preventDefault(){}});assert.equal(run('modal'),'inventory');
+  run('closeModal();profile.gold=100;die();');events.keydown({code:'Tab',preventDefault(){}});assert.equal(run('modal'),'death');
+});
+
+test('merchant compares each item to the same equipped slot with actual damage and empty-slot handling',async()=>{
+  const {run,elements}=await boot();
+  run('stock=[{id:"gun-test",type:"gun",name:"Test pistol",power:10,rarity:0},{id:"rifle-test",type:"rifle",name:"Test rifle",power:10,rarity:0},{id:"torso-test",type:"torso",name:"Test jacket",power:1,rarity:0},{id:"head-test",type:"head",name:"Test visor",power:1,rarity:0}];merchant();');
+  const html=elements.get('overlay').innerHTML;
+  assert.match(html,/data-compare-slot="gun" data-delta="5"/);
+  assert.match(html,/data-compare-slot="rifle" data-delta="4"/);
+  assert.match(html,/data-compare-slot="torso" data-delta="-1"/);
+  assert.match(html,/data-compare-slot="head" data-delta="0"/);
+  assert.match(html,/25 за выстрел <b[^>]*>\(\+5 урона\)/);assert.ok(!html.includes('Надето:'));
+  assert.match(html,/body-schematic/);assert.match(html,/bag-panel/);
+  run('profile.equipment.gun=null;merchant();');
+  assert.match(elements.get('overlay').innerHTML,/data-compare-slot="gun" data-delta="25"/);
+  assert.ok(!elements.get('overlay').innerHTML.includes('Надето:'));
+});
+
+test('merchant purchases, equips, filters and sells without leaving its combined window',async()=>{
+  const {run,click,elements,storage}=await boot();
+  run('profile.gold=1000;stock=[{id:"upgrade",type:"gun",name:"Upgrade",power:12,rarity:0}];const cost=buyPrice(stock[0]);merchant();');
+  click('buy:0');assert.equal(run('modal'),'merchant');assert.equal(run('profile.gold'),run('1000-cost'));
+  assert.equal(run('profile.bag[0].id'),'upgrade');assert.equal(run('stock.length'),0);
+  click('equip:0');assert.equal(run('modal'),'merchant');assert.equal(run('profile.equipment.gun.id'),'upgrade');
+  assert.equal(run('profile.bag[0].id'),'starter-gun');
+  click('filter:clothes');assert.equal(run('modal'),'merchant');assert.ok(!elements.get('overlay').innerHTML.includes('data-action="equip:0"'));
+  click('filter:weapons');assert.match(elements.get('overlay').innerHTML,/data-action="equip:0"/);
+  run('const sale=itemValue(profile.bag[0]);const money=profile.gold;');click('sell:0');
+  assert.equal(run('modal'),'merchant');assert.equal(run('profile.gold'),run('money+sale'));assert.equal(run('profile.bag.length'),0);
+  click('unequip:gun');assert.equal(run('modal'),'merchant');assert.equal(run('profile.equipment.gun'),null);
+  assert.equal(run('profile.bag[0].id'),'upgrade');
+  assert.equal(JSON.parse(storage.get('emberfall-save-v1')).equipment.gun,null);
+});
+
+test('merchant refuses purchases with full backpack or insufficient funds',async()=>{
+  const {run,click,elements}=await boot();
+  run('profile.gold=1000;profile.bag=Array.from({length:BAG_LIMIT},(_,i)=>({...profile.equipment.head,id:"bag-"+i}));merchant();const money=profile.gold;const count=stock.length;');
+  click('buy:0');assert.equal(run('profile.gold'),run('money'));assert.equal(run('stock.length'),run('count'));
+  assert.match(elements.get('overlay').innerHTML,/Рюкзак заполнен/);
+  run('profile.bag=[];profile.gold=0;merchant();');click('buy:0');
+  assert.equal(run('profile.bag.length'),0);assert.equal(run('stock.length'),run('count'));
+});
+
 test('W/S climb generated ladders, space detaches and the camera follows upper floors',async()=>{
   const {run,tick}=await boot();
   run('expedition(1);world=generateLevel(1,23,"megablock");world.enemies=[];const l=world.ladders[0];player.x=l.x-player.w/2;player.y=l.bottom-player.h;keys.clear();press("w");');

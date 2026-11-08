@@ -35,6 +35,13 @@ const damageStats={weapon:'damage',gun:'gunDamage',rifle:'rifleDamage',shotgun:'
 const itemDamage = item => stats({...profile,equipment:{...profile.equipment,[item.type]:item}})[damageStats[item.type]];
 const itemStat = item => !weaponSlots.includes(item.type)?`${item.power} брони`:
   `${itemDamage(item)}${item.type==='shotgun'?' × 5 дробин':item.type==='weapon'?' за удар':' за выстрел'}`;
+function itemComparison(item){
+  const worn=profile.equipment[item.type],weapon=weaponSlots.includes(item.type);
+  const before=worn?(weapon?itemDamage(worn):worn.power):0,after=weapon?itemDamage(item):item.power,delta=after-before;
+  const tone=delta>0?'positive':delta<0?'negative':'unchanged';
+  const unit=!weapon?'брони':item.type==='shotgun'?'за дробину × 5':'урона';
+  return `<b class="item-delta ${tone}" data-compare-slot="${item.type}" data-delta="${delta}">${delta?`(${delta>0?'+':''}${delta} ${unit})`:'(без изменений)'}</b>`;
+}
 
 function save() {
   profile.threat = recommendedDepth(profile);
@@ -130,27 +137,30 @@ function expedition(depth = recommendedDepth(profile)) {
 function showModal(title, description, content = '', actions = '', wide = false) {
   keys.clear(); player.vx = 0; player.blocking = false;
   $('interaction').classList.add('hidden');
-  $('overlay').classList.toggle('character-overlay', ['inventory', 'skills'].includes(modal));
+  $('overlay').classList.toggle('character-overlay', ['inventory', 'skills', 'merchant'].includes(modal));
   $('overlay').classList.toggle('skills-overlay', modal === 'skills');
+  $('overlay').classList.toggle('merchant-overlay', modal === 'merchant');
   $('overlay').innerHTML = `<section class="modal${wide ? ' wide' : ''}" role="dialog" aria-modal="true" aria-label="${escape(title)}">${terminal() ? '' : '<button class="modal-close" data-action="close" aria-label="Закрыть окно">×</button>'}<div class="eyebrow">NEON / ${mode === 'hub' ? 'УБЕЖИЩЕ H10' : 'КОНТРАКТ'}</div><h2>${title}</h2>${description ? `<p>${description}</p>` : ''}${content}<div class="modal-buttons">${actions}</div></section>`;
   $('overlay').classList.remove('hidden'); $('overlay').querySelector('button:not(:disabled)')?.focus();
 }
-function closeModal() { modal = null; $('overlay').classList.add('hidden'); $('overlay').classList.remove('character-overlay', 'skills-overlay'); keys.clear(); canvas.focus({ preventScroll: true }); }
-function inventory() {
-  modal = 'inventory'; const s = stats(profile);
+function closeModal() { modal = null; $('overlay').classList.add('hidden'); $('overlay').classList.remove('character-overlay', 'skills-overlay', 'merchant-overlay'); keys.clear(); canvas.focus({ preventScroll: true }); }
+function characterPanels() {
+  const s = stats(profile);
   const equipped = Object.entries(SLOTS).map(([slot, name]) => {
     const item = profile.equipment[slot];
-    return `<div class="slot-row"><span class="item-icon ${rarityClasses[item?.rarity || 0]}">${icons[slot]}</span><div class="item-copy"><small>${name.toUpperCase()}</small><strong>${item ? escape(item.name) : 'Пустой слот'}</strong><small>${item ? `${rarityNames[item.rarity]} · ${itemStat(item)}` : 'Можно надеть из рюкзака'}</small></div>${item ? button('Снять', `unequip:${slot}`, true, profile.bag.length >= BAG_LIMIT) : ''}</div>`;
+    return `<div class="slot-row" data-equipment-slot="${slot}"><span class="item-icon ${rarityClasses[item?.rarity || 0]}">${icons[slot]}</span><div class="item-copy"><small>${name.toUpperCase()}</small><strong>${item ? escape(item.name) : 'Пустой слот'}</strong><small>${item ? `${rarityNames[item.rarity]} · ${itemStat(item)}` : 'Можно надеть из рюкзака'}</small></div>${item ? button('Снять', `unequip:${slot}`, true, profile.bag.length >= BAG_LIMIT) : ''}</div>`;
   }).join('');
   const rows = profile.bag.map((item, i) => {
     const weapon = weaponSlots.includes(item.type);
     if (bagFilter === 'weapons' && !weapon || bagFilter === 'clothes' && weapon) return '';
-    const delta = weaponSlots.includes(item.type)?itemDamage(item)-stats(profile)[damageStats[item.type]]:item.power-(profile.equipment[item.type]?.power||0);
-    return `<div class="shop-row"><span class="item-icon ${rarityClasses[item.rarity]}">${icons[item.type]}</span><div class="item-copy"><strong>${escape(item.name)}</strong><small>${SLOTS[item.type]} · ${itemStat(item)} <b class="${delta >= 0 ? 'positive' : 'negative'}">(${delta >= 0 ? '+' : ''}${delta})</b></small><small>${rarityNames[item.rarity]}</small></div>${button('Надеть', `equip:${i}`)}${mode === 'hub' ? button(`${itemValue(item)} €$`, `sell:${i}`, true) : ''}</div>`;
+    return `<div class="shop-row" data-item-slot="${item.type}"><span class="item-icon ${rarityClasses[item.rarity]}">${icons[item.type]}</span><div class="item-copy"><strong>${escape(item.name)}</strong><small>${SLOTS[item.type]} · ${itemStat(item)} ${itemComparison(item)} · ${rarityNames[item.rarity]}</small></div><div class="item-actions">${button('Надеть', `equip:${i}`)}${mode === 'hub' ? button(`Продать · ${itemValue(item)} €$`, `sell:${i}`, true) : ''}</div></div>`;
   }).join('');
   const schematic = previewMarkup(profile.equipment);
-  const content = `${characterTabs('inventory')}<div class="character-stats"><span>HP <b>${Math.ceil(player.hp)}/${s.maxHp}</b></span><span>КАТАНА <b>${s.damage}</b></span><span>ОГОНЬ <b>${s.gunDamage}/${s.rifleDamage}/${s.shotgunDamage}×5</b></span><span>БРОНЯ <b>${s.armor}</b></span><span>ВЫНОСЛ. <b>${s.maxStamina}</b></span><span>ЭДДИ <b>${profile.gold}</b></span></div><div class="character-layout"><section class="loadout"><div class="section-label">ЭКИПИРОВКА / 8 СЛОТОВ</div><div class="loadout-body"><div class="body-schematic">${schematic}<small>СОЛО / H10<br>БИОМЕТРИЯ В НОРМЕ</small></div><div class="slots">${equipped}</div></div><p>Усиления: сила ${profile.strength} / выносливость ${profile.vitality}. Угроза контракта: ${recommendedDepth(profile)}.</p></section><section class="bag-panel"><div class="section-label">РЮКЗАК <span>${profile.bag.length} / ${BAG_LIMIT}</span></div><div class="bag-filters">${['all', 'weapons', 'clothes'].map((f, i) => button(['Всё', 'Оружие', 'Одежда'][i], `filter:${f}`, bagFilter !== f)).join('')}</div><div class="inventory-list">${rows || '<p>Нет предметов в этой категории. Снаряжение встречается редко; ищи тайники или загляни к оружейнику.</p>'}</div><p>Медгель: ${profile.potions} · +${s.healing} HP · Q. ${mode === 'hub' ? 'Кнопка с ценой продаёт предмет.' : 'Продажа доступна в убежище.'}</p></section></div>`;
-  showModal('Персонаж / Наёмник', `Уровень ${profile.level} · Опыт ${profile.xp}/${s.nextXp}. Сравнение предметов показывает разницу с надетой вещью.`, content, button('Закрыть · B / Esc', 'close', true), true);
+  return `<div class="character-stats"><span>HP <b>${Math.ceil(player.hp)}/${s.maxHp}</b></span><span>КАТАНА <b>${s.damage}</b></span><span>ОГОНЬ <b>${s.gunDamage}/${s.rifleDamage}/${s.shotgunDamage}×5</b></span><span>БРОНЯ <b>${s.armor}</b></span><span>ВЫНОСЛ. <b>${s.maxStamina}</b></span><span>ЭДДИ <b>${profile.gold}</b></span></div><div class="character-layout"><section class="loadout"><div class="section-label">ЭКИПИРОВКА / 8 СЛОТОВ</div><div class="loadout-body"><div class="body-schematic">${schematic}<small>СОЛО / H10<br>БИОМЕТРИЯ В НОРМЕ</small></div><div class="slots">${equipped}</div></div><p>Усиления: сила ${profile.strength} / выносливость ${profile.vitality}. Угроза контракта: ${recommendedDepth(profile)}.</p></section><section class="bag-panel"><div class="section-label">РЮКЗАК <span>${profile.bag.length} / ${BAG_LIMIT}</span></div><div class="bag-filters">${['all', 'weapons', 'clothes'].map((f, i) => button(['Всё', 'Оружие', 'Одежда'][i], `filter:${f}`, bagFilter !== f)).join('')}</div><div class="inventory-list">${rows || '<p>Нет предметов в этой категории.</p>'}</div><p>Медгель: ${profile.potions} · +${s.healing} HP · Q.${mode==='hub'?' Предметы из рюкзака можно продать.':''}</p></section></div>`;
+}
+function inventory() {
+  modal='inventory';const s=stats(profile);
+  showModal('Персонаж / Наёмник', `Уровень ${profile.level} · Опыт ${profile.xp}/${s.nextXp}. Сравнение предметов показывает разницу с надетой вещью.`, characterTabs('inventory')+characterPanels(), button('Закрыть · B / Esc', 'close', true), true);
 }
 function skillTree() {
   const previousScroll = modal === 'skills' ? $('overlay').querySelector('.modal')?.scrollTop || 0 : 0;
@@ -166,10 +176,14 @@ function skillTree() {
   $('overlay').querySelector('.modal').scrollTop = previousScroll;
 }
 function merchant() {
+  const selectors=['.modal','.merchant-stock .inventory-list','.bag-panel .inventory-list'];
+  const scroll=selectors.map(selector=>modal==='merchant'?$('overlay').querySelector(selector)?.scrollTop||0:0);
   modal = 'merchant';
-  const rows = stock.map((item, i) => `<div class="shop-row"><span class="item-icon ${rarityClasses[item.rarity]}">${icons[item.type]}</span><div class="item-copy"><strong>${escape(item.name)}</strong><small>${SLOTS[item.type]} · ${itemStat(item)} · ${rarityNames[item.rarity]}</small></div>${button(`${buyPrice(item)} €$`, `buy:${i}`, false, profile.gold < buyPrice(item) || profile.bag.length >= BAG_LIMIT)}</div>`).join('');
-  showModal('Мира / Оружейник', `«В Найт-Сити хороший ствол — лучшая страховка». Баланс: ${profile.gold} €$.`, `<div class="inventory-list"><div class="shop-row"><span class="item-icon">✚</span><div class="item-copy"><strong>Медгель</strong><small>+${stats(profile).healing} HP · Есть: ${profile.potions}</small></div>${button(`${BALANCE.potionCost} €$`, 'potion', false, profile.gold < BALANCE.potionCost)}</div>${rows}</div>`, button('Персонаж и рюкзак', 'inventory', true) + button('Закрыть', 'close', true), true);
+  const rows = stock.map((item, i) => `<div class="shop-row" data-item-slot="${item.type}"><span class="item-icon ${rarityClasses[item.rarity]}">${icons[item.type]}</span><div class="item-copy"><strong>${escape(item.name)}</strong><small>${SLOTS[item.type]} · ${itemStat(item)} ${itemComparison(item)} · ${rarityNames[item.rarity]}</small></div>${button(`Купить · ${buyPrice(item)} €$`, `buy:${i}`, false, profile.gold < buyPrice(item) || profile.bag.length >= BAG_LIMIT)}</div>`).join('');
+  showModal('Мира / Оружейник', 'Сравни товар с надетой вещью того же типа. Купленное попадёт в рюкзак — здесь же можно надеть его или продать лишнее.', `<div class="merchant-layout"><section class="merchant-stock"><div class="section-label">ТОВАРЫ МИРЫ <span>${stock.length} ПРЕДМЕТОВ</span></div>${profile.bag.length>=BAG_LIMIT?'<p class="negative">Рюкзак заполнен. Продай предмет или освободи место.</p>':''}<div class="inventory-list"><div class="shop-row"><span class="item-icon">✚</span><div class="item-copy"><strong>Медгель</strong><small>+${stats(profile).healing} HP · Есть: ${profile.potions}</small></div>${button(`Купить · ${BALANCE.potionCost} €$`, 'potion', false, profile.gold < BALANCE.potionCost)}</div>${rows}</div></section><section class="merchant-character" aria-label="Персонаж и рюкзак">${characterPanels()}</section></div>`, button('Закрыть · Esc', 'close', true), true);
+  selectors.forEach((selector,i)=>{const el=$('overlay').querySelector(selector);if(el)el.scrollTop=scroll[i];});
 }
+function refreshGear(){if(modal==='merchant')merchant();else inventory();}
 function trainer() {
   modal = 'trainer';
   showModal('Орин / Рипер', `Усиления остаются навсегда. Баланс: ${profile.gold} €$. Навыки изучаются отдельно за очки уровня.`, ['strength', 'vitality'].map(type => `<div class="shop-row"><div class="item-copy"><strong>${type === 'strength' ? 'Мышечные волокна' : 'Биомонитор'} · ${profile[type]}</strong><small>${type === 'strength' ? '+2 катана / +1 огнестрел' : '+10 HP / +3 выносливость'}</small></div>${button(`${trainingCost(profile, type)} €$`, type, false, profile.gold < trainingCost(profile, type))}</div>`).join(''), button(`Способности · ${availablePoints(profile)} очк.`, 'skills') + button('Закрыть', 'close', true));
@@ -177,7 +191,7 @@ function trainer() {
 function pause() { modal = 'pause'; showModal('Соединение приостановлено', 'Персонаж сохраняется автоматически. Незавершённый контракт после перезагрузки не восстанавливается.', '', button('Продолжить', 'close')); }
 function help() {
   modal = 'help';
-  showModal('Боевой протокол', 'Выбери оружие на 1–4. ЛКМ всегда атакует выбранным. Можно бежать назад, целиться и атаковать на ходу или в прыжке. Катана и блок расходуют выносливость.', `<div class="help-grid"><span><kbd>A</kbd><kbd>D</kbd></span><span>Движение · Space — прыжок · W/S у лестницы — подъём/спуск</span><kbd>1 / 2 / 3 / 4</kbd><span>Катана / пистолет / автомат / дробовик</span><kbd>ЛКМ / J</kbd><span>Атака выбранным оружием · удерживать</span><kbd>ПКМ / K</kbd><span>Блок спереди · наведи мышь на угрозу</span><kbd>Shift</kbd><span>Перекат; в воздухе — с навыком воздушного рывка</span><kbd>R</kbd><span>Перезарядка · отдельные магазины</span><kbd>E / Q</kbd><span>Действие / медгель (+${stats(profile).healing} HP)</span><kbd>B / I / P</kbd><span>Персонаж / рюкзак / способности</span><kbd>⛶ / F11</kbd><span>Полноэкранный режим браузера</span><kbd>Esc</kbd><span>Пауза / закрыть окно</span></div>`, button('Принято', 'close'));
+  showModal('Боевой протокол', 'Выбери оружие на 1–4. ЛКМ всегда атакует выбранным. Можно бежать назад, целиться и атаковать на ходу или в прыжке. Катана и блок расходуют выносливость.', `<div class="help-grid"><span><kbd>A</kbd><kbd>D</kbd></span><span>Движение · Space — прыжок · W/S у лестницы — подъём/спуск</span><kbd>1 / 2 / 3 / 4</kbd><span>Катана / пистолет / автомат / дробовик</span><kbd>ЛКМ / J</kbd><span>Атака выбранным оружием · удерживать</span><kbd>ПКМ / K</kbd><span>Блок спереди · наведи мышь на угрозу</span><kbd>Shift</kbd><span>Перекат; в воздухе — с навыком воздушного рывка</span><kbd>R</kbd><span>Перезарядка · отдельные магазины</span><kbd>E / Q</kbd><span>Действие / медгель (+${stats(profile).healing} HP)</span><kbd>Tab / B / I / P</kbd><span>Персонаж / рюкзак / способности</span><kbd>⛶ / F11</kbd><span>Полноэкранный режим браузера</span><kbd>Esc</kbd><span>Пауза / закрыть окно</span></div>`, button('Принято', 'close'));
 }
 function complete() {
   if (modal === 'complete') return;
@@ -223,6 +237,16 @@ function interact() {
     else complete();
   }
 }
+function highlightEquipment(target){
+  const card=target?.closest?.('[data-item-slot]')||document.activeElement?.closest?.('[data-item-slot]');
+  const slot=card?.dataset.itemSlot;
+  for(const el of $('overlay').querySelectorAll('[data-equipment-slot], .gear-callouts [data-slot]')){
+    el.classList.toggle('equipment-highlight',!!slot&&(el.dataset.equipmentSlot||el.dataset.slot)===slot);
+  }
+  for(const el of $('overlay').querySelectorAll('.gear-callouts'))el.classList.toggle('comparison-active',!!slot);
+}
+for(const name of ['pointerover','focusin'])$('overlay').addEventListener(name,event=>highlightEquipment(event.target));
+for(const name of ['pointerout','focusout'])$('overlay').addEventListener(name,event=>highlightEquipment(event.relatedTarget));
 $('overlay').addEventListener('click', event => {
   const action = event.target.closest('[data-action]')?.dataset.action; if (!action) return;
   const [type, raw] = action.split(':'), i = Number(raw);
@@ -233,18 +257,18 @@ $('overlay').addEventListener('click', event => {
   if (type === 'inventory' && !terminal()) inventory();
   if (type === 'skills' && !terminal()) skillTree();
   if (type === 'learn' && modal === 'skills' && learnSkill(profile, raw)) { profile.threat = recommendedDepth(profile); skillTree(); }
-  if (type === 'filter' && ['all', 'weapons', 'clothes'].includes(raw)) { bagFilter = raw; inventory(); }
+  if (type === 'filter' && ['inventory','merchant'].includes(modal) && ['all', 'weapons', 'clothes'].includes(raw)) { bagFilter = raw; refreshGear(); }
   if (type === 'potion' && modal === 'merchant' && profile.gold >= BALANCE.potionCost) { profile.gold -= BALANCE.potionCost; profile.potions++; merchant(); }
   if (type === 'buy' && modal === 'merchant') {
     const item = stock[i];
     if (item && profile.gold >= buyPrice(item) && profile.bag.length < BAG_LIMIT) { profile.gold -= buyPrice(item); profile.bag.push(item); stock.splice(i, 1); merchant(); }
   }
-  if (type === 'equip' && modal === 'inventory') {
+  if (type === 'equip' && ['inventory','merchant'].includes(modal)) {
     const item = profile.bag[i];
-    if (item) { const old = profile.equipment[item.type]; profile.equipment[item.type] = item; if (old) profile.bag[i] = old; else profile.bag.splice(i, 1); profile.threat = recommendedDepth(profile); inventory(); }
+    if (item) { const old = profile.equipment[item.type]; profile.equipment[item.type] = item; if (old) profile.bag[i] = old; else profile.bag.splice(i, 1); profile.threat = recommendedDepth(profile); refreshGear(); }
   }
-  if (type === 'unequip' && modal === 'inventory' && Object.hasOwn(SLOTS, raw) && profile.equipment[raw] && profile.bag.length < BAG_LIMIT) { profile.bag.push(profile.equipment[raw]); profile.equipment[raw] = null; inventory(); }
-  if (type === 'sell' && modal === 'inventory' && mode === 'hub' && profile.bag[i]) { profile.gold += itemValue(profile.bag[i]); profile.bag.splice(i, 1); inventory(); }
+  if (type === 'unequip' && ['inventory','merchant'].includes(modal) && Object.hasOwn(SLOTS, raw) && profile.equipment[raw] && profile.bag.length < BAG_LIMIT) { profile.bag.push(profile.equipment[raw]); profile.equipment[raw] = null; refreshGear(); }
+  if (type === 'sell' && ['inventory','merchant'].includes(modal) && mode === 'hub' && profile.bag[i]) { profile.gold += itemValue(profile.bag[i]); profile.bag.splice(i, 1); refreshGear(); }
   if (['strength', 'vitality'].includes(type) && modal === 'trainer' && profile.gold >= trainingCost(profile, type)) {
     profile.gold -= trainingCost(profile, type); profile[type]++; player.hp = stats(profile).maxHp; player.stamina = stats(profile).maxStamina; profile.threat = recommendedDepth(profile); trainer();
   }
@@ -262,6 +286,7 @@ $('fullscreen-button').onclick = async () => {
 $('hub-button').onclick = () => { if (mode !== 'hub' && !modal) { modal = 'return'; showModal('Прервать контракт?', 'Добыча останется у тебя. Бонус за зачистку не будет начислен.', '', button('Эвакуироваться', 'hub') + button('Остаться', 'close', true)); } };
 
 function press(key) {
+  if(key==='tab'){if(!modal)inventory();return;}
   if (key === 'escape') { if (terminal()) return; if (modal) closeModal(); else pause(); return; }
   if ((key === 'b' || key === 'i') && modal === 'inventory') { closeModal(); return; }
   if (key === 'p') { if (terminal()) return; if (modal === 'skills') closeModal(); else skillTree(); return; }
@@ -273,9 +298,10 @@ function press(key) {
   if (key === 'e') interact(); if (key === 'q') drink(); if (key === 'b' || key === 'i') inventory();
   if (key === 'shift') roll(); if (key === 'r') reload();
 }
-const physicalKeys = { Digit1:'1', Digit2:'2', Digit3:'3', Digit4:'4', Numpad1:'1', Numpad2:'2', Numpad3:'3', Numpad4:'4', KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyJ: 'j', KeyK: 'k', KeyR: 'r', KeyE: 'e', KeyQ: 'q', KeyB: 'b', KeyI: 'i', KeyP: 'p', ShiftLeft: 'shift', ShiftRight: 'shift', Space: ' ', Escape: 'escape', ArrowLeft: 'a', ArrowRight: 'd', ArrowUp: 'w', ArrowDown: 's' };
+const physicalKeys = { Tab:'tab', Digit1:'1', Digit2:'2', Digit3:'3', Digit4:'4', Numpad1:'1', Numpad2:'2', Numpad3:'3', Numpad4:'4', KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyJ: 'j', KeyK: 'k', KeyR: 'r', KeyE: 'e', KeyQ: 'q', KeyB: 'b', KeyI: 'i', KeyP: 'p', ShiftLeft: 'shift', ShiftRight: 'shift', Space: ' ', Escape: 'escape', ArrowLeft: 'a', ArrowRight: 'd', ArrowUp: 'w', ArrowDown: 's' };
 window.addEventListener('keydown', event => {
   const key = physicalKeys[event.code]; if (!key || event.ctrlKey || event.metaKey || event.altKey) return;
+  if(key==='tab'&&event.shiftKey)return;
   if (modal && !['escape', 'b', 'i', 'p'].includes(key)) return;
   event.preventDefault(); if (!event.repeat) press(key);
 });
@@ -460,9 +486,9 @@ function frame(now) {
   const elapsed = Math.min((now - last) / 1000 || 0, .05); last = now;
   if (!modal) { time += elapsed; accumulator += elapsed; while (accumulator >= 1 / 120) { update(1 / 120); accumulator -= 1 / 120; if (modal) { accumulator = 0; break; } } } else accumulator = 0;
   render(); requestAnimationFrame(frame);
-  previewTime += modal === 'inventory' ? elapsed : 0;
-  paintPreviews(profile.equipment, modal === 'inventory' ? previewTime : time);
+  previewTime += ['inventory','merchant'].includes(modal) ? elapsed : 0;
+  paintPreviews(profile.equipment, ['inventory','merchant'].includes(modal) ? previewTime : time);
 }
 Promise.all([preloadSprites(), preloadEnvironment()]).catch(error => console.warn('Art assets unavailable; fallback is active.', error));
 hub(); resize(); new ResizeObserver(resize).observe(canvas.parentElement); requestAnimationFrame(frame);
-toast('1–4 — выбрать оружие · ЛКМ — атака · ПКМ — блок · Shift — перекат · B — персонаж.');
+toast('1–4 — выбрать оружие · ЛКМ — атака · ПКМ — блок · Shift — перекат · Tab — персонаж.');

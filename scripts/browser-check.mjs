@@ -72,6 +72,55 @@ try {
     await evaluate('const high=levelPreview.generate(17,"megablock");levelPreview.setCamera(high.portal.x-500,high.top)');
     await screenshot('night-city-level-megablock-top.png');
     assert.deepEqual(errors,[]);console.log('Level checks passed: four rendered themes, distinct seeded plans and vertical camera; no runtime exceptions.');
+  }else if(process.argv.includes('--merchant-review')){
+    await evaluate(`(async()=>{const {DEFAULT_PROFILE}=await import('/src/world.js');const p=structuredClone(DEFAULT_PROFILE);p.gold=2000;p.bag=[{id:'shop-review',type:'torso',name:'Арамидная куртка',rarity:1,power:5}];localStorage.setItem('emberfall-save-v1',JSON.stringify(p));})()`);
+    await send('Page.navigate',{url:`http://127.0.0.1:${port}`});
+    await until(()=>evaluate('document.getElementById("gold-stat")?.textContent==="2000"'));
+    await key('KeyA','keydown');
+    await until(()=>evaluate('document.getElementById("interaction").textContent.includes("Мира")&&!document.getElementById("interaction").classList.contains("hidden")'));
+    await key('KeyA','keyup');await key('KeyE','keydown');await key('KeyE','keyup');
+    await until(()=>evaluate('!!document.querySelector(".merchant-layout")'));
+    await delay(150);
+    assert.equal(await evaluate('document.querySelectorAll(".merchant-stock .item-delta").length'),8);
+    assert.ok(await evaluate('!document.querySelector(".merchant-stock").textContent.includes("Надето:")'));
+    for(const slot of ['torso','rifle']){
+      await evaluate(`document.querySelector('.merchant-stock [data-item-slot="${slot}"]').dispatchEvent(new PointerEvent('pointerover',{bubbles:true}))`);
+      assert.equal(await evaluate('document.querySelector(".slot-row.equipment-highlight").dataset.equipmentSlot'),slot);
+      assert.equal(await evaluate('document.querySelectorAll(".slot-row.equipment-highlight").length'),1);
+      if(slot==='torso')assert.ok(await evaluate('!!document.querySelector(".gear-callouts [data-slot=torso].equipment-highlight")'));
+    }
+    await evaluate('document.querySelector(".merchant-stock [data-item-slot=rifle]").dispatchEvent(new PointerEvent("pointerout",{bubbles:true}))');
+    assert.equal(await evaluate('document.querySelectorAll(".slot-row.equipment-highlight").length'),0);
+    await send('Page.bringToFront');
+    await evaluate('document.querySelector(".merchant-stock [data-item-slot=torso] button").focus()');
+    assert.equal(await evaluate('document.querySelector(".slot-row.equipment-highlight").dataset.equipmentSlot'),'torso');
+    assert.equal(await evaluate('document.querySelectorAll(".merchant-character .slot-row").length'),8);
+    assert.ok(await evaluate('document.querySelector(".merchant-character .body-schematic canvas").getContext("2d").getImageData(0,0,600,900).data.some((v,i)=>i%4===3&&v>0)'));
+    await screenshot('night-city-merchant-desktop.png');
+    await click('.merchant-stock [data-action^="buy:"]');
+    assert.equal(await evaluate('JSON.parse(localStorage.getItem("emberfall-save-v1")).bag.length'),2);
+    await click('[data-action="equip:0"]');
+    assert.equal(await evaluate('JSON.parse(localStorage.getItem("emberfall-save-v1")).equipment.torso.power'),5);
+    assert.ok(await evaluate('!!document.querySelector(".merchant-layout")'));
+    await click('[data-action="sell:0"]');
+    assert.equal(await evaluate('JSON.parse(localStorage.getItem("emberfall-save-v1")).bag.length'),1);
+    for(const [width,height]of [[1517,900],[1366,768],[844,390],[390,844]]){
+      await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width===390});await delay(70);
+      assert.ok(await evaluate('(()=>{const m=document.querySelector(".modal");return document.documentElement.scrollWidth<=innerWidth&&document.documentElement.scrollHeight<=innerHeight&&m.scrollWidth<=m.clientWidth+1;})()'),'merchant has no page or horizontal scrolling');
+      if(width>1200){
+        assert.ok(await evaluate(`(()=>{
+          const modal=document.querySelector('.modal'),stock=document.querySelector('.merchant-stock').getBoundingClientRect(),character=document.querySelector('.merchant-character').getBoundingClientRect();
+          const portrait=document.querySelector('.merchant-character .body-schematic'),stage=portrait.querySelector('.raster-stage'),label=portrait.querySelector('small');
+          return modal.scrollHeight<=modal.clientHeight+1&&Math.abs(stock.bottom-character.bottom)<2
+            &&portrait.getBoundingClientRect().height<=stage.getBoundingClientRect().height+label.getBoundingClientRect().height+parseFloat(getComputedStyle(portrait).paddingTop)+2;
+        })()`),'desktop stock fills the purchase area and portrait has no stretched empty space');
+        if(width===1517)await screenshot('night-city-merchant-1517x900.png');
+      }
+    }
+    await screenshot('night-city-merchant-mobile-stock.png');
+    await evaluate('document.querySelector(".merchant-character").scrollIntoView({block:"start"})');
+    await screenshot('night-city-merchant-mobile-character.png');
+    assert.deepEqual(errors,[]);console.log('Merchant checks passed: same-slot comparisons, raster character, buy/equip/sell and responsive layout.');
   }else if(process.argv.includes('--environment-review')){
     await send('Page.navigate',{url:`http://127.0.0.1:${port}/scripts/environment-preview.html`});
     await until(()=>evaluate('window.environmentPreviewReady===true'));

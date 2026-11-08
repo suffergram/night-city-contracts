@@ -1,0 +1,64 @@
+.character-overlay .modal,.character-overlay .slots{scrollbar-color:#a44c61 #27101b;scrollbar-width:thin}
+.item-copy .item-delta{font-weight:700;white-space:normal}
+.item-copy .item-delta.positive{color:#4fe4c8}
+.item-copy .item-delta.negative{color:#ff6d86}
+.item-copy .item-delta.unchanged{color:#b4b3bb}
+.slot-row.equipment-highlight{background:#f5ed4919;box-shadow:inset 3px 0 #f5ed49;outline:1px solid #f5ed4977;outline-offset:-1px}
+.slot-row.equipment-highlight .item-icon{border-color:#f5ed49;color:#fff294;box-shadow:0 0 10px #f5ed492a}
+.body-schematic .gear-callouts.comparison-active{opacity:1}
+.gear-callouts.comparison-active [data-slot]{opacity:.18}
+.gear-callouts.comparison-active .equipment-highlight{opacity:1;stroke:#fff294;stroke-width:3;filter:drop-shadow(0 0 4px #ffe96d)}
+.item-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.merchant-overlay .modal{width:1480px;height:calc(100dvh - 32px);max-height:calc(100dvh - 32px);display:flex;flex-direction:column;overflow:hidden}
+.merchant-overlay .modal>h2,.merchant-overlay .modal>p,.merchant-overlay .modal>.eyebrow,.merchant-overlay .modal>.modal-buttons{flex-shrink:0}
+.merchant-overlay .modal>.modal-buttons{margin-top:12px}
+.merchant-layout{display:grid;grid-template-columns:minmax(260px,.8fr) minmax(0,1.7fr);gap:18px;align-items:stretch;flex:1;min-height:0}
+.merchant-stock{padding:16px;border:1px solid #6e3546;background:#120e1b99;min-width:0;min-height:0;display:flex;flex-direction:column}
+.merchant-stock>.inventory-list{flex:1;max-height:none;min-height:0;margin-top:10px;padding-right:8px;overscroll-behavior:contain}
+.merchant-stock .shop-row{display:grid;grid-template-columns:28px minmax(0,1fr);align-items:start;gap:9px}
+.merchant-stock .shop-row>.button{grid-column:2;justify-self:start}
+.merchant-stock .item-copy strong{font-size:11px;line-height:1.5}
+.merchant-stock .item-copy small{line-height:1.6}
+.merchant-character{min-width:0;min-height:0;display:flex;flex-direction:column}
+.merchant-character .character-stats{grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 12px}
+.merchant-character .character-stats b{font-size:16px;overflow-wrap:anywhere}
+.merchant-character .character-layout{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:12px;flex:1;min-height:0}
+.merchant-character .loadout,.merchant-character .bag-panel{padding:12px;min-width:0;min-height:0;display:flex;flex-direction:column}
+.merchant-character .loadout>.section-label,.merchant-character .loadout>p,.merchant-character .bag-panel>.section-label,.merchant-character .bag-panel>p,.merchant-character .bag-filters{flex-shrink:0}
+.merchant-character .loadout-body{gap:10px;flex:1;min-height:0;align-items:flex-start}
+.merchant-character .slots{height:100%;overflow:auto;overscroll-behavior:contain;padding:2px 4px;scrollbar-color:#a44c61 #27101b;scrollbar-width:thin}
+.merchant-character .body-schematic{display:flex;align-self:center;justify-content:center;width:180px;min-width:150px;flex-shrink:0;height:auto;padding-top:14px}
+.merchant-character .body-schematic small{font-size:7px;letter-spacing:1px}
+.merchant-character .slot-row .item-copy strong{overflow-wrap:anywhere}
+.merchant-character .bag-panel .inventory-list{flex:1;max-height:none;min-height:0;overscroll-behavior:contain}
+.merchant-character .bag-panel .shop-row{flex-wrap:wrap}
+.merchant-character .bag-panel .item-copy{flex-basis:calc(100% - 40px)}
+.merchant-character .bag-panel .item-actions{flex-direction:row;flex-wrap:wrap;margin-left:33px}
+.merchant-character .bag-filters{flex-wrap:wrap;gap:4px}
+@media(max-width:1200px){
+  .merchant-overlay .modal{display:block;height:auto;overflow:auto}
+  .merchant-layout{grid-template-columns:1fr}
+  .merchant-stock{height:clamp(220px,calc(100dvh - 190px),650px)}
+  .merchant-character{display:block}
+  .merchant-character .loadout-body{flex:none}
+  .merchant-character .slots{height:auto;overflow:visible}
+  .merchant-character .bag-panel .inventory-list{flex:none;max-height:320px;min-height:100px}
+  .merchant-character .body-schematic{width:150px;min-width:120px}
+}
+@media(min-width:1201px) and (max-height:700px){.merchant-character .body-schematic{display:none}}
+@media(max-width:850px){
+  .merchant-character .character-layout{grid-template-columns:1fr}
+  .merchant-character .body-schematic{width:150px;min-width:110px}
+  .merchant-character .bag-panel .shop-row{flex-wrap:nowrap}
+  .merchant-character .bag-panel .item-copy{flex-basis:auto}
+  .merchant-character .bag-panel .item-actions{flex-direction:column;margin-left:0}
+}
+@media(max-width:520px){
+  .merchant-stock{padding:10px}
+  .merchant-layout{gap:12px}
+  .merchant-character .body-schematic{width:105px;min-width:85px}
+  .merchant-character .character-stats b{font-size:14px}
+  .merchant-character .bag-panel .shop-row{flex-wrap:wrap}
+  .merchant-character .bag-panel .item-copy{flex-basis:calc(100% - 40px);min-width:0}
+  .merchant-character .bag-panel .item-actions{flex-direction:row;margin-left:33px}
+}
