@@ -30,7 +30,7 @@ let particles = [], floats = [], bullets = [], shake = 0, toastTimer, stock = []
 const mouse = { active: false, x: 0, y: 0 };
 const cheats={godmode:false,oneshot:false,speed:false,ammo:false,jump:false};
 const cheatNames={godmode:'Неуязвимость',oneshot:'Убийство с одного попадания',speed:'Быстрый бег ×3',ammo:'Бесконечные патроны',jump:'Мегапрыжок'};
-const cheatLocations={industrial:'Промзона',port:'Порт',market:'Рынок',megablock:'Мегаблок'};
+const cheatLocations={industrial:'Промзона',port:'Порт',market:'Нижний квартал',megablock:'Мегаблок'};
 let cheatHotkeysEnabled=false,cheatNoticeTimer;
 let loadingScene=true,nextMinimap=0,lastInteraction='',lastReloadStatus='',preparedEquipment='';
 const equipmentSignature=()=>JSON.stringify(['head','torso','legs','feet'].map(slot=>profile.equipment[slot]?[profile.equipment[slot].id,profile.equipment[slot].rarity]:null));
@@ -121,13 +121,13 @@ function updateUI() {
     return `<div class="equipment-row"><div class="item-icon ${rarityClasses[item?.rarity || 0]}">${icons[slot]}</div><div><strong>${item ? escape(item.name) : SLOTS[slot] + ' · пусто'}</strong><small>${item ? itemStat(item) : 'Не экипировано'}</small></div></div>`;
   }).join('');
   $('scene-title').innerHTML = hub ? 'Убежище H10<span> / Уотсон</span>' : `${world.name}<span> / Угроза ${world.depth}</span>`;
-  $('scene-subtitle').textContent = hub ? 'Найт-Сити не прощает ошибок. Подготовься к следующему контракту.' : 'Зачисти сектор, забери эдди и доберись до терминала эвакуации.';
+  $('scene-subtitle').textContent = hub ? 'Найт-Сити не прощает ошибок. Подготовься к следующему контракту.' : 'Зачисти сектор, забери эдди и доберись до точки отправления.';
   $('expedition-label').textContent = hub ? `Следующий контракт · Угроза ${recommendedDepth(profile)}` : `Угроза ${world.depth} · ${world.kills} / ${world.enemies.length}`;
   $('location-label').textContent = hub ? 'НЕЙТРАЛЬНАЯ ТЕРРИТОРИЯ' : 'ЗОНА КОНФЛИКТА';
   $('world-info').textContent = hub ? 'Найт-Сити · 02:17 · Сухая ночь' : `${world.flavour} · Угроза ${world.depth}`;
   $('scene-icon').textContent = hub ? '⌂' : '⚠'; $('badge-title').textContent = hub ? 'Убежище H10' : world.name;
   $('badge-subtitle').textContent = hub ? 'Оружейник · Рипер · Контракты' : `Цели: ${world.enemies.length - world.kills}`;
-  $('objective').textContent = hub ? `Терминал справа · Следующая угроза: ${recommendedDepth(profile)}` : world.kills === world.enemies.length ? 'Сектор чист. Иди к терминалу эвакуации' : `Нейтрализуй противников: ${world.kills} / ${world.enemies.length}`;
+  $('objective').textContent = hub ? `Автомобиль ждёт · Следующая угроза: ${recommendedDepth(profile)}` : world.kills === world.enemies.length ? 'Сектор чист. Доберись до точки отправления' : `Нейтрализуй противников: ${world.kills} / ${world.enemies.length}`;
   $('quest-title').textContent = hub ? 'Город сожрёт слабых' : 'Зачистка сектора';
   $('quest-description').textContent = hub ? 'Мира торгует оружием и одеждой. Орин установит усиления. Контракт учитывает твою силу и пройденную угрозу.' : 'Стрелки держат дистанцию, клинки заходят прыжками, штурмовики прикрываются бронёй. Следи за красным предупреждением перед атакой.';
   $('quest-progress').textContent = `Медгели: ${profile.potions} · ${hub ? 'Рекорд: ' + profile.best : 'Эдди за контракт: ' + world.earned}`;
@@ -452,7 +452,7 @@ function hitEnemy(enemy, raw = stats(profile).damage, sourceX = center(player).x
     player.hp = Math.min(stats(profile).maxHp, player.hp + (perks.killHeal || 0));
     if (levels) { player.hp = Math.min(stats(profile).maxHp, player.hp + 20); toast(`Уровень ${profile.level}. +${levels * 2} очка способностей! Нажми P для прокачки.`); }
     if (Math.random() < BALANCE.killDrop) giveItem(makeItem(world.depth));
-    if (world.kills === world.enemies.length) toast('Сектор чист. Эвакуация доступна справа.');
+    if (world.kills === world.enemies.length) toast('Сектор чист. Путь свободен — доберись до точки отправления.');
     save(); updateUI();
   }
 }

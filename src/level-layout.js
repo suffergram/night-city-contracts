@@ -6,7 +6,7 @@ import {MARKET_BUILDINGS,MARKET_BUILDING_WALLS,marketBuildingSize,marketBuilding
 export const LEVEL_KINDS={
   industrial:{name:'Промзона Уотсона',hint:'Технические площадки и переходы'},
   port:{name:'Грузовой порт',hint:'Контейнеры, краны и грузовые мостки'},
-  market:{name:'Ночной рынок',hint:'Прилавки, навесы и верхние проходы'},
+  market:{name:'Нижний квартал',hint:'Магазины, жилые галереи и тесные переулки'},
   megablock:{name:'Мегаблок',hint:'Жилые ярусы, лестничные марши и техэтажи'},
 };
 export function createLayout(rng,ground,forcedKind) {
