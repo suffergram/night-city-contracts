@@ -199,5 +199,11 @@ export function createLayout(rng,ground,forcedKind) {
   layout.name=LEVEL_KINDS[kind].name;layout.flavour=pick(['Северный сектор','Техническое крыло','Восточная линия','Закрытый периметр']);
   // Pick once for the contract; never reroll while scrolling or drawing.
   layout.backdrop=kind==='market'&&rng()<.5?'metropolis':'district';
+  // Repeated facades cycle through different occupancy patterns, fixed for this level.
+  const lightingVariants=new Map();
+  for(const d of layout.decor)if(['marketBuilding','marketHotel'].includes(d.kind)){
+    const key=d.kind+':'+d.style,variant=lightingVariants.get(key)??integer(0,3);
+    d.lightVariant=variant;d.lightSeed=integer(0,2147483647);lightingVariants.set(key,(variant+1)%4);
+  }
   return layout;
 }

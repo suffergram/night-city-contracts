@@ -7,6 +7,7 @@ import {MARKET_HOTELS} from './market-hotels.js';
 import {MARKET_BUILDINGS} from './market-buildings.js';
 import {drawBuildingAtmosphere} from './building-atmosphere.js';
 import {HOTEL_ATMOSPHERE} from './hotel-atmosphere.js';
+import {buildingLighting,fixtureLight} from './building-light-variation.js';
 import {withUnlitBase,drawSpriteEmission} from './sprite-lighting.js';
 import {OBJECT_LIGHTS} from './object-lights.js';
 import {exitStyle} from './exits.js';
@@ -354,20 +355,22 @@ function drawDetails(ctx,canvas,world,camera,time,kind=world.kind,cameraY=0){
     if(d.sprite==='grill')drawCookingSteam(ctx,d.x+d.w*.45,d.y+8,30,time,d.x);
   }
 }
-function hotelLights(style,time,seed){
-  return HOTEL_ATMOSPHERE[style].lights.map((light,i)=>{
-    if(!light.window)return light;
-    const phase=((time+seed*.03+i*11)%45+45)%45;
-    const dark=Math.max(0,Math.min(1,(phase-29)/2,(39-phase)/2));
-    return {...light,level:(1-dark*.95)*(.90+.06*Math.sin(time*.3+i)),glow:.35};
+function hotelLights(style,time,seed,building={x:seed,w:0,lightSeed:seed}){
+  const profile=HOTEL_ATMOSPHERE[style],variation=buildingLighting(building,profile.lights.filter(light=>light.window).length,profile.lamps.length,profile.lights.length);
+  let window=0;
+  return profile.lights.map((light,i)=>{
+    if(!light.window)return {...light,level:fixtureLight(time,variation.seed+i*37,variation.signs[i])};
+    return {...light,level:controlledLight(variation.windows[window++]?1:0),glow:.35};
   });
 }
 function drawHotelAtmosphere(ctx,d,source,time){
   const profile=HOTEL_ATMOSPHERE[d.style];if(!profile||!source)return;
   const x=d.x,y=d.y+1+source.contactInset*d.h/source.h,seed=d.x*7+d.w*13;
-  drawLights(ctx,{...source,emission:null},hotelLights(d.style,time,seed),x,y,d.w,d.h,time,seed,'hotel:'+d.style);
+  const lights=hotelLights(d.style,time,seed,d);
+  drawLights(ctx,{...source,emission:null},lights,x,y,d.w,d.h,time,seed,'hotel:'+d.style);
   for(const [i,[lx,ly,floor]]of profile.lamps.entries()){
-    drawLampAtmosphere(ctx,x+lx*d.w,y+ly*d.h,(floor-ly)*d.h,time,seed+i*31,lightLevel(time,seed+i));
+    const nearest=lights.filter(light=>!light.window).reduce((best,light)=>Math.hypot(light.rect[0]+light.rect[2]/2-lx,light.rect[1]+light.rect[3]/2-ly)<Math.hypot(best.rect[0]+best.rect[2]/2-lx,best.rect[1]+best.rect[3]/2-ly)?light:best);
+    drawLampAtmosphere(ctx,x+lx*d.w,y+ly*d.h,(floor-ly)*d.h,time,seed+i*31,nearest.level);
   }
   for(const [i,[vx,vy]]of profile.vents.entries()){
     const phase=((time+seed*.01+i*11)%26+26)%26;
@@ -376,7 +379,7 @@ function drawHotelAtmosphere(ctx,d,source,time){
   }
 }
 const locationVariants=new Map();
-function drawLocationProp(ctx,index,x,y,w,h,variant=0,interior=false,atlas='locations',time=0){
+function drawLocationProp(ctx,index,x,y,w,h,variant=0,interior=false,atlas='locations',time=0,building){
   const p=prop(index,atlas);if(!p)return;
   const fitted=fitScenery(p.w,p.h,x,y,w,h);x=fitted.x;y=fitted.y;w=fitted.w;h=fitted.h;
   y+=1+p.contactInset*h/p.h;
@@ -405,7 +408,7 @@ function drawLocationProp(ctx,index,x,y,w,h,variant=0,interior=false,atlas='loca
     ctx.drawImage(locationVariants.get(key),x,y,w,h);
   }else ctx.drawImage(p.image,p.x,p.y,p.w,p.h,x,y,w,h);
   const hotel=Object.keys(MARKET_HOTELS).find(style=>MARKET_HOTELS[style].asset===atlas),seed=x*7+w*13;
-  if(hotel)drawSpriteEmission(ctx,p,hotelLights(hotel,time,seed),x,y,w,h,time,seed);
+  if(hotel)drawSpriteEmission(ctx,p,hotelLights(hotel,time,seed,building),x,y,w,h,time,seed);
   else drawLights(ctx,p,OBJECT_LIGHTS[atlas]?.[index]||[],x,y,w,h,time,seed,atlas+':'+index);
 }
 function drawDeck(ctx,x,y,w,h){
@@ -432,7 +435,7 @@ function drawLocation(ctx,canvas,world,camera,time,cameraY=0){
     }
     if(d.kind==='marketHotel'){
       ctx.save();ctx.beginPath();ctx.rect(d.x-2,d.y-2,d.w+4,GROUND-d.y+3);ctx.clip();
-      drawLocationProp(ctx,0,d.x,d.y,d.w,d.h,0,false,MARKET_HOTELS[d.style].asset,time);
+      drawLocationProp(ctx,0,d.x,d.y,d.w,d.h,0,false,MARKET_HOTELS[d.style].asset,time,d);
       ctx.restore();
       drawHotelAtmosphere(ctx,d,prop(0,MARKET_HOTELS[d.style].asset),time);
       continue;

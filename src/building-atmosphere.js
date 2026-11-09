@@ -1,5 +1,6 @@
 import {ambientGlow,controlledLight,lightLevel,drawVentSteam,drawLampAtmosphere} from './ambient.js';
 import {withInteriorLight,drawSpriteEmission} from './sprite-lighting.js';
+import {buildingLighting,fixtureLight} from './building-light-variation.js';
 
 // Coordinates are normalized to each facade's opaque bounds, never its PNG padding.
 export const BUILDING_EFFECTS={
@@ -39,11 +40,11 @@ export const BUILDING_EFFECTS={
   },
   'repair-a':{
     lights:[
-      {"rect":[0.13,0.575,0.56,0.05],"colour":"#db93ee","mode":"strong","kind":"sign"},
+      {"rect":[0.095,0.555,0.61,0.052],"colour":"#db93ee","mode":"strong","kind":"sign",lettering:true},
     ],
     windows:[[0.1,0.23,0.18,0.18],[0.28,0.23,0.16,0.18],[0.44,0.23,0.19,0.18],[0.095,0.64,0.61,0.25],[0.755,0.65,0.1,0.14]],
     vents:[[0.16,0.018]],
-    lamps:[[0.84,0.2,0.5],[0.805,0.594,0.98]],
+    lamps:[[0.843,0.194,0.5,{halo:12,wash:21,intensity:.65}],[0.811,0.574,0.98,{halo:12,wash:21,intensity:.65}]],
     signals:[[0.57,0.77],[0.62,0.83]]
   },
   'repair-b':{
@@ -85,13 +86,13 @@ const LAMP_LENSES={
 const clamp=n=>Math.max(0,Math.min(1,n));
 function emitter(source,light){
   let cache=masks.get(source);if(!cache){cache=new Map();masks.set(source,cache);}
-  const key=light.kind+':'+light.colour+':'+light.rect.join(',');if(cache.has(key))return cache.get(key);
+  const key=light.kind+':'+light.colour+':'+light.rect.join(',')+':'+!!light.lettering;if(cache.has(key))return cache.get(key);
   const [x,y,w,h]=light.rect,c=document.createElement('canvas');c.width=Math.max(1,Math.round(source.w*w));c.height=Math.max(1,Math.round(source.h*h));
   const a=c.getContext('2d',{willReadFrequently:true});a.drawImage(source.image,source.x+x*source.w,source.y+y*source.h,w*source.w,h*source.h,0,0,c.width,c.height);
   const pixels=a.getImageData(0,0,c.width,c.height),d=pixels.data,colour=light.colour.match(/[a-f\d]{2}/gi).map(n=>parseInt(n,16));
   for(let yy=0;yy<c.height;yy++)for(let xx=0;xx<c.width;xx++){
     const i=(yy*c.width+xx)*4,lum=d[i]*.2126+d[i+1]*.7152+d[i+2]*.0722;
-    const detail=light.kind==='lamp'?clamp((lum-25)/80)*.95:clamp((lum-30)/85);
+    const detail=light.kind==='lamp'?clamp((lum-25)/80)*.95:light.lettering?clamp((lum-75)/25):clamp((lum-30)/85);
     const edge=clamp(Math.min(xx+1,yy+1,c.width-xx,c.height-yy)/2);
     d[i]=colour[0];d[i+1]=colour[1];d[i+2]=colour[2];d[i+3]*=detail*edge;
   }
@@ -100,23 +101,27 @@ function emitter(source,light){
 export function drawBuildingAtmosphere(ctx,d,source,time,litImage){
   const profile=BUILDING_EFFECTS[d.style];if(!profile||!source)return;
   const seed=d.x*11+d.w*3,x=d.x,y=d.y+1+source.contactInset*d.h/source.h;
+  const variation=buildingLighting(d,profile.windows.length,profile.lamps.length,profile.lights.length);
   const windows=profile.windows.map((rect,i)=>{
-    const residential=rect[1]<.60,occupied=Math.sin(seed*.17+i*12.9898)*43758.5453;
-    const unoccupied=residential&&occupied-Math.floor(occupied)<.35;
-    const phase=((time+seed*.03+i*13)%83+83)%83,dark=clamp(Math.min((phase-55)/3,(72-phase)/3));
-    return {rect,window:true,level:controlledLight(unoccupied?0:residential?1-dark:1)};
+    return {rect,window:true,level:controlledLight(variation.windows[i]?1:0)};
   });
   const interior=withInteriorLight(source,litImage,windows);
   if(interior)drawSpriteEmission(ctx,interior,windows,x,y,d.w,d.h,time,seed);
   for(const [i,light]of profile.lights.entries()){
-    const level=lightLevel(time,seed+i*37,light.mode);
+    const level=fixtureLight(time,variation.seed+i*37,variation.signs[i]);
     const [lx,ly,lw,lh]=light.rect,px=x+lx*d.w,py=y+ly*d.h;
     const textSign=profile.label&&light.kind==='sign';
     if(!textSign){
-      ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha*=level;ctx.drawImage(emitter(source,light),px,py,lw*d.w,lh*d.h);ctx.restore();
+      ctx.save();ctx.globalCompositeOperation=light.lettering?'lighter':'screen';ctx.globalAlpha*=level;ctx.drawImage(emitter(source,light),px,py,lw*d.w,lh*d.h);ctx.restore();
     }
     // Exterior halos belong to signs and lamps, not the window glass.
-    if(!textSign)ambientGlow(ctx,px+lw*d.w/2,py+lh*d.h/2,Math.max(lw*d.w,lh*d.h)*.9,light.colour,.24*level);
+    if(!textSign){
+      if(light.lettering){
+        // Keep the halo close to the lettering instead of washing the whole storey.
+        ctx.save();ctx.translate(px+lw*d.w/2,py+lh*d.h/2);ctx.scale(1,.20);
+        ambientGlow(ctx,0,0,lw*d.w*.55,light.colour,.38*level);ctx.restore();
+      }else ambientGlow(ctx,px+lw*d.w/2,py+lh*d.h/2,Math.max(lw*d.w,lh*d.h)*.9,light.colour,.24*level);
+    }
     if(textSign){
       // The artwork has a blank signboard: only the lettering emits light.
       ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';
@@ -131,18 +136,18 @@ export function drawBuildingAtmosphere(ctx,d,source,time,litImage){
     const phase=((time+seed*.02+i*5)%23+23)%23,strength=clamp(Math.min(phase/2,(18-phase)/3));
     if(strength){ctx.save();ctx.globalAlpha*=strength;drawVentSteam(ctx,x+vx*d.w,y+vy*d.h,54,time,seed+i,1.5);ctx.restore();}
   }
-  for(const [i,[lx,ly,floor]]of profile.lamps.entries()){
+  for(const [i,[lx,ly,floor,options={}]]of profile.lamps.entries()){
     const px=x+lx*d.w,py=y+ly*d.h;
-    const level=lightLevel(time,seed+i,i%3===1?'strong':false),colour='#ffda9c';
+    const level=fixtureLight(time,variation.seed+i,variation.lamps[i]),colour='#ffda9c';
     const [lw,lh]=LAMP_LENSES[d.style];
     const lens={kind:'lamp',colour,rect:[lx-lw/2,ly-lh/2,lw,lh]};
     // Illuminate the original lens pixels, retaining the painted housing and grille.
     ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha*=level;
     ctx.drawImage(emitter(source,lens),px-lw*d.w/2,py-lh*d.h/2,lw*d.w,lh*d.h);ctx.restore();
-    ambientGlow(ctx,px,py,Math.max(16,lw*d.w*1.8),colour,.90*level);
+    ambientGlow(ctx,px,py,options.halo??Math.max(16,lw*d.w*1.8),colour,(options.intensity??.90)*level);
     // A soft wash on the concrete immediately below the fixture.
     ctx.save();ctx.translate(px,py+13);ctx.scale(.8,1.25);
-    ambientGlow(ctx,0,0,32,colour,.44*level);ctx.restore();
+    ambientGlow(ctx,0,0,options.wash??32,colour,(options.intensity ? .30 : .44)*level);ctx.restore();
     drawLampAtmosphere(ctx,px,py,(floor-ly)*d.h,time,seed+i,level);
   }
   for(const [i,[wx,wy,wr]]of (profile.washers||[]).entries()){
