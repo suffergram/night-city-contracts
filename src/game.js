@@ -68,7 +68,7 @@ function updateHUD() {
   const selected = WEAPONS[player.activeWeapon];
   $('ammo-label').textContent = selected.kind === 'melee' ? 'КАТАНА / ЛКМ' : player.reload > 0 ? `ПЕРЕЗАРЯДКА ${player.reload.toFixed(1)}с` : `${player.ammo} / ${selected.magazine} · R`;
   $('weapon-label').textContent = `${selected.name} · ${s[damageStats[player.activeWeapon]]}${player.activeWeapon==='shotgun'?' × 5':''} урона`;
-  for (const slot of weaponSlots) $('hot-ammo-' + slot).textContent = WEAPONS[slot].kind === 'melee' ? 'БЛИЖНИЙ БОЙ' : `${slot === player.activeWeapon ? player.ammo : player.magazines[slot]} / ${WEAPONS[slot].magazine}`;
+  for (const slot of weaponSlots) $('hot-ammo-' + slot).textContent = WEAPONS[slot].kind === 'melee' ? 'БЛИЖНИЙ БОЙ' : slot===player.activeWeapon&&player.reload>0?'ПЕРЕЗАРЯДКА':`${slot === player.activeWeapon ? player.ammo : player.magazines[slot]} / ${WEAPONS[slot].magazine}`;
   $('combat-state').textContent = player.climbing!=null?'ЛЕСТНИЦА · W/S · ПРОБЕЛ — СПРЫГНУТЬ':player.guardBreak > 0 ? 'БЛОК ПРОБИТ' : player.dodge > 0 ? 'УКЛОНЕНИЕ' : player.blocking ? 'БЛОК' : 'БОЕВОЙ ИНТЕРФЕЙС';
   if(mode!=='hub'&&world.kind==='megablock'){
     const floor=world.floors.reduce((a,y,i)=>Math.abs(y-player.y-player.h)<Math.abs(world.floors[a]-player.y-player.h)?i:a,0);
@@ -76,7 +76,17 @@ function updateHUD() {
   }
 }
 function renderHotbar() {
-  $('weapon-bar').innerHTML = weaponSlots.map(slot => `<button class="weapon-slot ${player.activeWeapon === slot ? 'selected' : ''}" data-weapon="${slot}" aria-label="${WEAPONS[slot].name}" aria-pressed="${player.activeWeapon === slot}"><kbd>${WEAPONS[slot].key}</kbd><span class="weapon-symbol weapon-art ${slot}" aria-hidden="true"></span><strong>${WEAPONS[slot].short}</strong><small id="hot-ammo-${slot}"></small></button>`).join('');
+  $('weapon-bar').innerHTML = weaponSlots.map(slot => `<button id="hot-slot-${slot}" class="weapon-slot ${player.activeWeapon === slot ? 'selected' : ''}" data-weapon="${slot}" aria-label="${WEAPONS[slot].name}" aria-pressed="${player.activeWeapon === slot}"><kbd>${WEAPONS[slot].key}</kbd><span class="weapon-symbol weapon-art ${slot}" aria-hidden="true"></span><strong>${WEAPONS[slot].short}</strong><small id="hot-ammo-${slot}"></small><span id="hot-reload-${slot}" class="weapon-reload" aria-hidden="true"></span></button>`).join('');
+  updateReloadIndicator();
+}
+function updateReloadIndicator(){
+  const progress=player.reloadDuration>0?Math.max(0,Math.min(1,1-player.reload/player.reloadDuration)):0;
+  for(const slot of weaponSlots){
+    const active=slot===player.activeWeapon&&player.reload>0;
+    $('hot-slot-'+slot).classList.toggle('reloading',active);
+    const indicator=$('hot-reload-'+slot);indicator.classList.toggle('active',active);
+    indicator.style.transform=`scaleX(${active?progress:0})`;
+  }
 }
 function selectWeapon(slot) {
   if (!Object.hasOwn(WEAPONS, slot) || terminal()) return;
@@ -462,6 +472,7 @@ function reload() {
   if (cfg.kind !== 'gun' || !profile.equipment[player.activeWeapon] || player.reload > 0 || player.ammo === cfg.magazine) return;
   player.reload = Math.max(.7, cfg.reload - (stats(profile).perks.reloadSaving || 0));
   player.reloadDuration = player.reload;
+  updateHUD();updateReloadIndicator();
 }
 function shoot() {
   const cfg = WEAPONS[player.activeWeapon];
@@ -551,6 +562,7 @@ function findTarget() {
   $('interaction').classList.toggle('hidden', !target); if (target) $('interaction').innerHTML = `<kbd>E</kbd> ${target.label}`;
 }
 function render() {
+  updateReloadIndicator();
   drawWorld(ctx, canvas, { mode, world, player, profile, camera,cameraY, time, particles, floats, bullets, shake, mouse });
   navigation.hidden = mode === 'hub' || !world.kind;
   if (!navigation.hidden) drawMinimap(minimapCtx, minimap, world, player);

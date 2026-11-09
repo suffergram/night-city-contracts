@@ -1,4 +1,9 @@
 /* Red monochrome operating system panels, cyan data and yellow active controls. */
+.weapon-slot{isolation:isolate}
+.weapon-slot .weapon-reload{position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:0;transform:scaleX(0);transform-origin:left center;background:linear-gradient(90deg,#40dcca12,#5fe9dc45);border-right:1px solid #75fff0}
+.weapon-slot .weapon-reload.active{opacity:1}
+.weapon-slot .weapon-reload::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;background:#66f5e4;box-shadow:0 0 8px #50e8dc99}
+#weapon-bar .weapon-slot.reloading small{color:#83f5e9}
 .button,.weapon-slot{position:relative;--button-cut:6px}
 .weapon-slot{--button-cut:8px}
 /* Draw the missing diagonal inside the clip, inheriting the actual border colour. */
