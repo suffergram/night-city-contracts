@@ -2,6 +2,37 @@ import {lightLevel,controlledLight} from './ambient.js';
 
 const clamp=n=>Math.max(0,Math.min(1,n));
 const layers=new WeakMap();
+const interiorLayers=new WeakMap();
+
+// Register a painted lighting state to the existing unlit sprite, preserving geometry.
+export function withInteriorLight(source,litImage,windows){
+  if(!litImage)return null;
+  const cached=interiorLayers.get(source);if(cached?.litImage===litImage)return cached.source;
+  const sample=document.createElement('canvas');sample.width=litImage.width;sample.height=litImage.height;
+  const s=sample.getContext('2d',{willReadFrequently:true});s.drawImage(litImage,0,0);
+  const raw=s.getImageData(0,0,sample.width,sample.height).data;
+  let left=sample.width,top=sample.height,right=0,bottom=0;
+  for(let y=2;y<sample.height-2;y++)for(let x=2;x<sample.width-2;x++)if(raw[(y*sample.width+x)*4+3]>75){left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);}
+  if(right<left||bottom<top)return null;
+  const on=document.createElement('canvas');on.width=source.w;on.height=source.h;
+  const a=on.getContext('2d',{willReadFrequently:true});a.drawImage(sample,left,top,right-left+1,bottom-top+1,0,0,on.width,on.height);
+  const lit=a.getImageData(0,0,on.width,on.height);
+  a.clearRect(0,0,on.width,on.height);a.drawImage(source.image,source.x,source.y,source.w,source.h,0,0,on.width,on.height);
+  const dark=a.getImageData(0,0,on.width,on.height).data,e=lit.data;
+  for(let y=0;y<on.height;y++)for(let x=0;x<on.width;x++){
+    const i=(y*on.width+x)*4,nx=(x+.5)/on.width,ny=(y+.5)/on.height;
+    let feather=0;
+    for(const {rect:[wx,wy,ww,wh]}of windows){
+      if(nx<wx||nx>wx+ww||ny<wy||ny>wy+wh)continue;
+      feather=Math.max(feather,clamp(Math.min((nx-wx)*on.width,(wx+ww-nx)*on.width,(ny-wy)*on.height,(wy+wh-ny)*on.height)/3));
+    }
+    const gain=clamp((Math.max(e[i],e[i+1],e[i+2])-Math.max(dark[i],dark[i+1],dark[i+2])-8)/42);
+    for(let c=0;c<3;c++)e[i+c]=Math.max(0,e[i+c]-dark[i+c]);
+    e[i+3]=Math.min(e[i+3],dark[i+3])*gain*feather;
+  }
+  a.putImageData(lit,0,0);
+  const result={...source,emission:on};interiorLayers.set(source,{litImage,source:result});return result;
+}
 
 // Geometry stays registered to the original sprite. Only its material is replaced.
 export function withUnlitBase(source,offImage,cell,threshold=75){

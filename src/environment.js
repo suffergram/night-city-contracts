@@ -14,6 +14,14 @@ import {drawTransportExit} from './exit-render.js';
 import {lightLevel,controlledLight,ambientGlow,drawLampAtmosphere,drawVentSteam,drawCityTraffic,drawHologram,drawScreenAnimation,drawCookingSteam,drawStallLights,drawHarbourHaze,drawElectricalFault,drawSceneDust,drawWarningBeacon} from './ambient.js';
 
 export const ENVIRONMENT_ASSETS = {
+  buildingHousingALit:new URL('../assets/environment/market-building-housing-a-interior-v1.png',import.meta.url).href,
+  buildingHousingBLit:new URL('../assets/environment/market-building-housing-b-interior-v1.png',import.meta.url).href,
+  buildingMinimarketALit:new URL('../assets/environment/market-building-minimarket-a-interior-v1.png',import.meta.url).href,
+  buildingMinimarketBLit:new URL('../assets/environment/market-building-minimarket-b-interior-v1.png',import.meta.url).href,
+  buildingRepairALit:new URL('../assets/environment/market-building-repair-a-interior-v1.png',import.meta.url).href,
+  buildingRepairBLit:new URL('../assets/environment/market-building-repair-b-interior-v1.png',import.meta.url).href,
+  buildingLaundryALit:new URL('../assets/environment/market-building-laundry-a-interior-v1.png',import.meta.url).href,
+  buildingLaundryBLit:new URL('../assets/environment/market-building-laundry-b-interior-v1.png',import.meta.url).href,
   buildingHousingA:new URL('../assets/environment/market-building-housing-a-v1.png',import.meta.url).href,
   buildingHousingB:new URL('../assets/environment/market-building-housing-b-v1.png',import.meta.url).href,
   buildingMinimarketA:new URL('../assets/environment/market-building-minimarket-a-v1.png',import.meta.url).href,
@@ -394,7 +402,7 @@ function drawLocation(ctx,canvas,world,camera,time){
       const atlas=MARKET_BUILDINGS[d.style].asset;
       ctx.save();ctx.beginPath();ctx.rect(d.x-2,d.y-2,d.w+4,GROUND-d.y+3);ctx.clip();
       drawLocationProp(ctx,0,d.x,d.y,d.w,d.h,0,false,atlas,time);
-      drawBuildingAtmosphere(ctx,d,prop(0,atlas),time);
+      drawBuildingAtmosphere(ctx,d,prop(0,atlas),time,images.get(atlas+'Lit'));
       ctx.restore();continue;
     }
     if(d.kind==='marketHotel'){
