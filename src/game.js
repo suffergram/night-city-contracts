@@ -22,7 +22,9 @@ const player = { x: 540, y: GROUND - ACTOR_HEIGHT, w: 20, h: ACTOR_HEIGHT, vx: 0
   coyote: 0, jumpBuffer: 0, dodge: 0, dodgeCooldown: 0, guardBreak: 0, blocking: false, regenDelay: 0,
   shotCooldown: 0, fireVisual: 0, reload: 0, ammo: BALANCE.magazine, healCooldown: 0, attackHit: false, activeWeapon: profile.activeWeapon,
   magazines: Object.fromEntries(weaponSlots.filter(slot => WEAPONS[slot].magazine).map(slot => [slot, WEAPONS[slot].magazine])) };
-let mode = 'hub', world, camera = 0,cameraY=0, time = 0, modal = null, last = 0, accumulator = 0, hudTimer = 0, previewTime = 0;
+let mode = 'hub', world, camera = 0,cameraY=0,cameraLook=0, time = 0, modal = null, last = 0, accumulator = 0, hudTimer = 0, previewTime = 0;
+const CAMERA_MODE='three-positions'; // Set to 'floating' to restore continuous mouse tracking.
+let cameraPosition=0;
 let particles = [], floats = [], bullets = [], shake = 0, toastTimer, stock = [], target = null, bagFilter = 'all';
 const mouse = { active: false, x: 0, y: 0 };
 player.aimAngle = 0;
@@ -131,8 +133,8 @@ function expedition(depth = recommendedDepth(profile)) {
   // Explicit next-stage depth can never fall below the character's recorded strength.
   depth = Math.max(depth, recommendedDepth(profile));
   mode = 'expedition'; world = generateLevel(depth); resetCombat();
-  Object.assign(player, { x:world.spawn.x, y:world.spawn.y-player.h, invuln: 1.2 });
-  camera = Math.max(0,Math.min(world.width-canvas.width,player.x-canvas.width*.38));cameraY=0;closeModal();save();updateUI();
+  Object.assign(player, { x:world.spawn.x, y:world.spawn.y-player.h, facing:world.spawn.x>world.width/2?-1:1, invuln: 1.2 });
+  camera = horizontalCameraTarget();cameraY=0;closeModal();save();updateUI();
   toast(`${world.name} · Угроза ${depth} · Целей: ${world.enemies.length}. W/S — лестницы · Пробел — прыжок.`);
 }
 function showModal(title, description, content = '', actions = '', wide = false) {
@@ -315,6 +317,29 @@ window.addEventListener('keyup', event => keys.delete(physicalKeys[event.code]))
 function updateAim() {
   player.aimAngle = aimAngle(player, mouse.active ? { x: mouse.x + camera, y: mouse.y+cameraY } : null);
 }
+function horizontalCameraTarget(dt=0) {
+  const width=canvas.width,cx=center(player).x;
+  let look;
+  if(CAMERA_MODE==='three-positions'){
+    if(!mouse.active)cameraPosition=player.facing;
+    else{
+      const cursor=mouse.x/width;
+      if(dt===0)cameraPosition=0;
+      // Screen-space zones prevent camera movement from moving its own switching thresholds.
+      // Overlapping thresholds avoid switching repeatedly at the edge of a zone.
+      if(cursor<.30)cameraPosition=-1;
+      else if(cursor>.70)cameraPosition=1;
+      else if(cameraPosition===-1&&cursor>.42||cameraPosition===1&&cursor<.58)cameraPosition=0;
+    }
+    look=cameraPosition*width*.16;
+  }else{
+    // Previous floating camera, retained for a quick return to the earlier behavior.
+    const dx=mouse.x+camera-cx,aimOffset=Math.sign(dx)*Math.max(0,Math.abs(dx)-width*.025);
+    look=mouse.active?Math.max(-width*.22,Math.min(width*.22,aimOffset*.4)):player.facing*width*.10;
+  }
+  cameraLook=dt>0?cameraLook+(look-cameraLook)*(1-Math.exp(-dt*2.2)):look;
+  return Math.max(0,Math.min(Math.max(0,world.width-width),cx-width*.5+cameraLook));
+}
 function aim(event) { const bounds = canvas.getBoundingClientRect(); mouse.x = (event.clientX - bounds.left) * canvas.width / bounds.width; mouse.y = (event.clientY - bounds.top) * canvas.height / bounds.height; mouse.active = true; if (player.dodge <= 0) player.facing = mouse.x + camera >= center(player).x ? 1 : -1; updateAim(); }
 canvas.addEventListener('pointermove', event => { if (event.pointerType !== 'touch' && !modal) aim(event); });
 canvas.addEventListener('pointerleave', () => { mouse.active = false; });
@@ -463,7 +488,7 @@ function update(dt) {
   if (terminal()) return;
   if (p.attack > 0 && p.attack < WEAPONS.weapon.duration - animationInfo(p).contactAt && !p.attackHit) { p.attackHit = true; slash(); }
   updateBullets(dt); if (terminal()) return;
-  camera += (Math.max(0, Math.min(world.width - canvas.width, p.x - canvas.width * .38)) - camera) * Math.min(1, dt * 7);
+  camera += (horizontalCameraTarget(dt) - camera) * (1-Math.exp(-dt*3.5));
   cameraY+=(Math.max(world.top||0,Math.min(0,p.y-canvas.height*.48))-cameraY)*Math.min(1,dt*7);
   updateAim();
   shake = Math.max(0, shake - dt);
@@ -489,7 +514,7 @@ function render() {
   navigation.hidden = mode === 'hub' || !world.kind;
   if (!navigation.hidden) drawMinimap(minimapCtx, minimap, world, player);
 }
-function resize() { const bounds = canvas.parentElement.getBoundingClientRect(); canvas.width = Math.round(660 * bounds.width / bounds.height); canvas.height = 660; camera = Math.max(0, Math.min(world.width - canvas.width, player.x - canvas.width * .38)); }
+function resize() { const bounds = canvas.parentElement.getBoundingClientRect(); canvas.width = Math.round(660 * bounds.width / bounds.height); canvas.height = 660; camera = horizontalCameraTarget(); }
 function frame(now) {
   const elapsed = Math.min((now - last) / 1000 || 0, .05); last = now;
   if (!modal) { time += elapsed; accumulator += elapsed; while (accumulator >= 1 / 120) { update(1 / 120); accumulator -= 1 / 120; if (modal) { accumulator = 0; break; } } } else accumulator = 0;
