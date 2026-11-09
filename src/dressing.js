@@ -1,5 +1,6 @@
 import {detailSize} from './detail-sizes.js';
 import {locationSize} from './scenery-sizes.js';
+import {exitBounds} from './exits.js';
 // Raster scenery only: none of these props creates collision or changes gameplay RNG.
 export const DETAIL_SPRITES = {
   bench:{atlas:'life',frame:0,w:92,h:38}, vending:{atlas:'life',frame:1,w:47,h:88},
@@ -38,7 +39,7 @@ export function dressingExclusions(world,ground,kind=world.kind||'hub'){
   for(const s of world.stairs||[])occupied.push({x:Math.min(s.lower.x,s.upper.x)-22,y:s.upper.y-60,w:Math.abs(s.lower.x-s.upper.x)+44,h:s.lower.y-s.upper.y+70});
   for(const c of world.chests||[])occupied.push({x:c.x-12,y:c.y-15,w:63,h:55});
   for(const l of world.wallLights||[])occupied.push({x:l.x-28,y:l.y-8,w:56,h:18});
-  if(world.portal)occupied.push({x:world.portal.x-58,y:(world.portal.y??ground)-140,w:116,h:150});
+  if(world.portal){const b=exitBounds(world);occupied.push({x:b.x-12,y:b.y-10,w:b.w+24,h:b.h+20});}
   if(world.spawn)occupied.push({x:world.spawn.x-65,y:world.spawn.y-80,w:150,h:90});
   if(kind==='hub')for(const [x,y,w,h]of [[65,ground-195,180,195],[255,ground-155,180,155],[715,ground-155,180,155],[520,ground-85,100,85]])occupied.push({x,y,w,h});
   return occupied;

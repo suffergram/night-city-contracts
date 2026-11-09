@@ -23,13 +23,6 @@ export function drawWorld(ctx, canvas, state) {
     rect(camera, GROUND, W, H - GROUND, '#151b29');
     for (const platform of world.platforms) if (!platform.ground) rect(platform.x, platform.y, platform.w, platform.h, '#343d50');
   }
-  const gate = world.portal, open = mode === 'hub' || world.kills === world.enemies.length;
-  const gateY=gate.y??GROUND;
-  const gateColor = open ? '#4fe9df' : '#f55870';
-  const gateHeight = HUMAN_SCALE.gate.height;
-  glow(gate.x, gateY - gateHeight * .5, 65, open ? '#3df2df18' : '#ff345026');
-  for (let i = 0; i < 6; i++) line(gate.x - 28, gateY - gateHeight * .8 + ((i * 12 + time * 10) % (gateHeight * .72)), gate.x + 28, gateY - gateHeight * .8 + ((i * 12 + time * 10) % (gateHeight * .72)), open ? '#43e4d92b' : '#f65f7377');
-  text(mode === 'hub' ? 'КОНТРАКТЫ' : open ? 'ЭВАКУАЦИЯ' : 'ЗАБЛОКИРОВАНО', gate.x, gateY - gateHeight - 12, 9, gateColor);
   if (mode === 'hub') {
     actor(312, GROUND - ACTOR_HEIGHT, 1, 'merchant', { h: ACTOR_HEIGHT, grounded: true });
     actor(800, GROUND - ACTOR_HEIGHT, -1, 'trainer', { h: ACTOR_HEIGHT, grounded: true });

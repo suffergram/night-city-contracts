@@ -272,7 +272,7 @@ function interact() {
   if (target.kind === 'portal') {
     if (mode === 'hub') {
       departure();
-    } else if (world.kills < world.enemies.length) toast(`Эвакуация заблокирована. Осталось целей: ${world.enemies.length - world.kills}.`);
+    } else if (world.kills < world.enemies.length) toast(`Эвакуация небезопасна. Осталось целей: ${world.enemies.length - world.kills}.`);
     else complete();
   }
 }
@@ -553,7 +553,7 @@ function update(dt) {
   findTarget();
 }
 function findTarget() {
-  const candidates = [{ kind: 'portal', x: world.portal.x, y: world.portal.y - 30, label: mode === 'hub' ? `Контракт · Угроза ${recommendedDepth(profile)}` : world.kills === world.enemies.length ? 'Эвакуация / Следующий сектор' : 'Терминал заблокирован' }];
+  const candidates = [{ kind: 'portal', x: world.portal.x, y: world.portal.y - 30, label: mode === 'hub' ? `Автомобиль / Контракты · Угроза ${recommendedDepth(profile)}` : world.kills === world.enemies.length ? 'Вызвать транспорт / Следующий сектор' : 'Эвакуация небезопасна' }];
   if (mode === 'hub') candidates.push({ kind: 'merchant', x: 325, y: GROUND - 30, label: 'Мира · Оружейник' }, { kind: 'trainer', x: 800, y: GROUND - 30, label: 'Орин · Рипер' }, { kind: 'medbay', x: 580, y: GROUND - 15, label: 'Медстанция · Восстановление' });
   for (const c of world.chests) if (!c.open) candidates.push({ kind: 'chest', x: c.x, y: c.y, label: 'Вскрыть тайник', object: c });
   const stairwell=findStairwell(player,world);

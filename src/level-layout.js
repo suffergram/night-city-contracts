@@ -1,6 +1,7 @@
 import {locationSize} from './scenery-sizes.js';
 import {MARKET_STALLS,marketStallSize,stallAdvance} from './market-stalls.js';
 import {MARKET_HOTELS,hotelSize,hotelSink} from './market-hotels.js';
+import {EXIT_STYLES,streetExit} from './exits.js';
 export const LEVEL_KINDS={
   industrial:{name:'Промзона Уотсона',hint:'Технические площадки и переходы'},
   port:{name:'Грузовой порт',hint:'Контейнеры, краны и грузовые мостки'},
@@ -139,8 +140,13 @@ export function createLayout(rng,ground,forcedKind) {
   let exits=supports.filter(p=>!p.ground).flatMap(p=>clearRanges(p).filter(r=>r.w>=110).map(r=>({...r,y:p.y})));
   if(kind==='megablock')exits=exits.filter(p=>p.y===Math.min(...layout.floors));
   else exits=exits.filter(p=>rightStart?p.x<width*.5:p.x+p.w>width*.5);
-  const exit=exits.length&&(kind==='megablock'||rng()<.8)?pick(exits):null;
-  layout.portal=exit?{x:integer(exit.x+45,exit.x+exit.w-45),y:exit.y}:{x:integer(rightStart?110:Math.floor(width*.65),rightStart?Math.floor(width*.35):width-110),y:ground};
+  const exit=kind==='megablock'&&exits.length?pick(exits):null;
+  const exitHalf=EXIT_STYLES[kind].w/2;
+  layout.portal=exit?{x:exit.x+exitHalf+rng()*Math.max(0,exit.w-exitHalf*2),y:exit.y}:streetExit(layout,ground,rightStart,rng);
+  layout.decor=layout.decor.filter(d=>{
+    if(d.kind==='crane'||['container','foodStall','techStall','clothesStall','marketHotel'].includes(d.kind))return true;
+    return d.y!==layout.portal.y||d.x+d.w<layout.portal.x-exitHalf-10||d.x>layout.portal.x+exitHalf+10;
+  });
   layout.slots=[];
   for(const p of supports)for(let x=p.x+55;x<p.x+p.w-50;x+=integer(125,210)){
     if(p.holes?.some(h=>x+36>h.x&&x<h.x+h.w))continue;
@@ -155,6 +161,7 @@ export function createLayout(rng,ground,forcedKind) {
   }else{
     for(let x=integer(150,250);x<width-90;x+=integer(420,600))layout.lamps.push({x,y:ground});
     if(kind==='market')layout.lamps=layout.lamps.filter(l=>!layout.decor.some(d=>d.kind==='marketHotel'&&l.x>d.x-15&&l.x<d.x+d.w+15));
+    layout.lamps=layout.lamps.filter(l=>Math.abs(l.x-layout.portal.x)>exitHalf+18);
   }
   layout.name=LEVEL_KINDS[kind].name;layout.flavour=pick(['Северный сектор','Техническое крыло','Восточная линия','Закрытый периметр']);
   // Pick once for the contract; never reroll while scrolling or drawing.

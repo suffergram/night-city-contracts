@@ -7,6 +7,8 @@ import {MARKET_HOTELS} from './market-hotels.js';
 import {HOTEL_ATMOSPHERE} from './hotel-atmosphere.js';
 import {withUnlitBase,drawSpriteEmission} from './sprite-lighting.js';
 import {OBJECT_LIGHTS} from './object-lights.js';
+import {exitStyle} from './exits.js';
+import {drawTransportExit} from './exit-render.js';
 import {lightLevel,controlledLight,ambientGlow,drawLampAtmosphere,drawVentSteam,drawCityTraffic,drawHologram,drawScreenAnimation,drawCookingSteam,drawStallLights,drawHarbourHaze,drawElectricalFault,drawSceneDust,drawWarningBeacon} from './ambient.js';
 
 export const ENVIRONMENT_ASSETS = {
@@ -33,6 +35,13 @@ export const ENVIRONMENT_ASSETS = {
   marketOff:new URL('../assets/environment/market-unlit-v1.png',import.meta.url).href,
   lifeOff:new URL('../assets/environment/life-unlit-v1.png',import.meta.url).href,
   worksiteOff:new URL('../assets/environment/worksite-unlit-v1.png',import.meta.url).href,
+  exitGarage:new URL('../assets/environment/exit-garage-v1.png',import.meta.url).href,
+  exitIndustrial:new URL('../assets/environment/exit-industrial-v1.png',import.meta.url).href,
+  exitMarket:new URL('../assets/environment/exit-market-v1.png',import.meta.url).href,
+  exitPort:new URL('../assets/environment/exit-port-v1.png',import.meta.url).href,
+  exitMegablock:new URL('../assets/environment/exit-megablock-v1.png',import.meta.url).href,
+  exitCar:new URL('../assets/environment/exit-car-v1.png',import.meta.url).href,
+  exitVan:new URL('../assets/environment/exit-van-v1.png',import.meta.url).href,
 };
 export const PARALLAX_LAYERS = [
   { asset: 'farCity', speed: .06, height: GROUND + 180, bottom: GROUND + 8, alpha: 1, filter: 'brightness(.75) saturate(.75)' },
@@ -97,7 +106,7 @@ function prop(index,atlas='props') {
   const image = images.get(atlas); if (!image) return null;
   const col = index % 4, row = Math.floor(index / 4);
   const rows=atlas==='props'?3:4;
-  const cell=atlas.startsWith('hotel')?{x:0,y:0,w:image.width,h:image.height}:atlas==='market'?marketCell(index,image.width,image.height):{x:Math.round(col*image.width/4),y:Math.round(row*image.height/rows),w:Math.round((col+1)*image.width/4)-Math.round(col*image.width/4),h:Math.round((row+1)*image.height/rows)-Math.round(row*image.height/rows)};
+  const cell=atlas.startsWith('hotel')||atlas.startsWith('exit')?{x:0,y:0,w:image.width,h:image.height}:atlas==='market'?marketCell(index,image.width,image.height):{x:Math.round(col*image.width/4),y:Math.round(row*image.height/rows),w:Math.round((col+1)*image.width/4)-Math.round(col*image.width/4),h:Math.round((row+1)*image.height/rows)-Math.round(row*image.height/rows)};
   const {x,y,w,h}=cell;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true }); ctx.drawImage(image, x, y, w, h, 0, 0, w, h);
@@ -250,7 +259,7 @@ export function drawRasterEnvironment(ctx, canvas, world, mode, camera,time=0) {
       const object = HUMAN_SCALE[name]; drawScaledProp(ctx, object.index, object.center, GROUND, object.height,time);
     }
   }
-  drawScaledProp(ctx, HUMAN_SCALE.gate.index, world.portal.x, GROUND, HUMAN_SCALE.gate.height,time);
+  drawTransportExit(ctx,world,mode,time,prop(0,exitStyle(world).asset));
   for (const c of world.chests) {
     if (!c.open) drawProp(ctx, 6, c.x, c.y + 25, 36, 25,time);
     else { ctx.save(); ctx.globalAlpha = .5; drawProp(ctx, 6, c.x, c.y + 25, 36, 23,time); ctx.restore(); }
@@ -462,7 +471,7 @@ function drawLocation(ctx,canvas,world,camera,time){
     if(p){const tileHeight=24*p.h/p.w;for(let yy=l.top;yy<l.bottom;yy+=tileHeight){const h=Math.min(tileHeight,l.bottom-yy);ctx.drawImage(p.image,p.x,p.y,p.w,p.h*h/tileHeight,l.x-12,yy,24,h);}}
     ambientGlow(ctx,l.x,l.top+6,12,'#5aede6',.13);
   }
-  drawScaledProp(ctx,HUMAN_SCALE.gate.index,world.portal.x,world.portal.y,HUMAN_SCALE.gate.height,time);
+  drawTransportExit(ctx,world,'expedition',time,prop(0,exitStyle(world).asset));
   for(const c of world.chests){ctx.save();if(c.open)ctx.globalAlpha=.45;drawProp(ctx,6,c.x,c.y+25,36,25,time);ctx.restore();}
   // Lamps remain sparse and fixed in world space; their positions vary with each layout.
   for(const lamp of world.lamps||[])if(lamp.x>camera-70&&lamp.x<camera+canvas.width+70)drawScaledProp(ctx,7,lamp.x,lamp.y,ACTOR_HEIGHT*2,time);
