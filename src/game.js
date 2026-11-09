@@ -27,6 +27,10 @@ const CAMERA_MODE='three-positions'; // Set to 'floating' to restore continuous 
 let cameraPosition=0;
 let particles = [], floats = [], bullets = [], shake = 0, toastTimer, stock = [], target = null, bagFilter = 'all';
 const mouse = { active: false, x: 0, y: 0 };
+const cheats={godmode:false,oneshot:false,speed:false,ammo:false,jump:false};
+const cheatNames={godmode:'Неуязвимость',oneshot:'Убийство с одного попадания',speed:'Быстрый бег ×3',ammo:'Бесконечные патроны',jump:'Мегапрыжок'};
+const cheatLocations={industrial:'Промзона',port:'Порт',market:'Рынок',megablock:'Мегаблок'};
+let cheatHotkeysEnabled=false,cheatNoticeTimer;
 player.aimAngle = 0;
 const rarityNames = ['Стандарт', 'Редкий', 'Легендарный'], rarityClasses = ['', 'rare', 'epic'];
 const icons = { weapon: '⚔', gun: '⌐', rifle: '⌁', shotgun: '═', head: '▱', torso: '◈', legs: 'Ⅱ', feet: '⌁' };
@@ -129,10 +133,10 @@ function hub() {
   stock = Object.keys(SLOTS).map(slot => makeItem(recommendedDepth(profile), Math.random, slot));
   camera = 0;cameraY=0; closeModal(); save(); updateUI();
 }
-function expedition(depth = recommendedDepth(profile)) {
+function expedition(depth = recommendedDepth(profile),kind) {
   // Explicit next-stage depth can never fall below the character's recorded strength.
   depth = Math.max(depth, recommendedDepth(profile));
-  mode = 'expedition'; world = generateLevel(depth); resetCombat();
+  mode = 'expedition'; world = generateLevel(depth,undefined,kind); resetCombat();
   Object.assign(player, { x:world.spawn.x, y:world.spawn.y-player.h, facing:world.spawn.x>world.width/2?-1:1, invuln: 1.2 });
   camera = horizontalCameraTarget();cameraY=0;closeModal();save();updateUI();
   toast(`${world.name} · Угроза ${depth} · Целей: ${world.enemies.length}. W/S — лестницы · Пробел — прыжок.`);
@@ -147,6 +151,24 @@ function showModal(title, description, content = '', actions = '', wide = false)
   $('overlay').classList.remove('hidden'); $('overlay').querySelector('button:not(:disabled)')?.focus();
 }
 function closeModal() { modal = null; $('overlay').classList.add('hidden'); $('overlay').classList.remove('character-overlay', 'skills-overlay', 'merchant-overlay'); keys.clear(); canvas.focus({ preventScroll: true }); }
+function cheatNotice(message) {
+  const notice=$('cheat-notice');notice.textContent=message;notice.hidden=false;
+  clearTimeout(cheatNoticeTimer);cheatNoticeTimer=setTimeout(()=>{notice.hidden=true;},3500);
+}
+function toggleCheat(code) {
+  cheats[code]=!cheats[code];
+  if(code==='godmode'&&cheats.godmode){player.hp=stats(profile).maxHp;updateHUD();}
+  if(code==='ammo'&&cheats.ammo){
+    for(const slot of weaponSlots)if(WEAPONS[slot].magazine)player.magazines[slot]=WEAPONS[slot].magazine;
+    player.ammo=player.magazines[player.activeWeapon]??0;player.reload=0;player.reloadDuration=0;updateHUD();
+  }
+  cheatNotice(`${cheatNames[code]}: ${cheats[code]?'ВКЛ':'ВЫКЛ'}`);
+}
+function departure() {
+  modal='depart';const depth=recommendedDepth(profile);
+  const locations=cheatHotkeysEnabled?`<p>Тестовый переход: выбери локацию.</p><div class="modal-buttons">${Object.entries(cheatLocations).map(([kind,name])=>button(name,`test-location:${kind}`,true)).join('')}</div>`:'';
+  showModal(`Контракт / Угроза ${depth}`, 'Уровень подобран по твоим характеристикам, экипировке и пройденной угрозе. Зачисти сектор и доберись до терминала. У стрелков есть лазерный прицел, у бойцов — замах перед ударом.',locations,button(cheatHotkeysEnabled?'Случайная локация':'Принять контракт','start')+button('Подготовиться','close',true));
+}
 function characterPanels() {
   const s = stats(profile);
   const equipped = Object.entries(SLOTS).map(([slot, name]) => {
@@ -239,8 +261,7 @@ function interact() {
   }
   if (target.kind === 'portal') {
     if (mode === 'hub') {
-      modal = 'depart'; const depth = recommendedDepth(profile);
-      showModal(`Контракт / Угроза ${depth}`, 'Уровень подобран по твоим характеристикам, экипировке и пройденной угрозе. Зачисти сектор и доберись до терминала. У стрелков есть лазерный прицел, у бойцов — замах перед ударом.', '', button('Принять контракт', 'start') + button('Подготовиться', 'close', true));
+      departure();
     } else if (world.kills < world.enemies.length) toast(`Эвакуация заблокирована. Осталось целей: ${world.enemies.length - world.kills}.`);
     else complete();
   }
@@ -261,6 +282,7 @@ $('overlay').addEventListener('click', event => {
   if (type === 'close' && !terminal()) closeModal();
   if (type === 'hub') hub();
   if (type === 'start' && modal === 'depart') expedition();
+  if(type==='test-location'&&modal==='depart'&&mode==='hub'&&cheatHotkeysEnabled&&Object.hasOwn(cheatLocations,raw))expedition(recommendedDepth(profile),raw);
   if (type === 'next' && modal === 'complete') expedition(world.depth + 1);
   if (type === 'inventory' && !terminal()) inventory();
   if (type === 'skills' && !terminal()) skillTree();
@@ -308,6 +330,18 @@ function press(key) {
 }
 const physicalKeys = { Tab:'tab', Digit1:'1', Digit2:'2', Digit3:'3', Digit4:'4', Numpad1:'1', Numpad2:'2', Numpad3:'3', Numpad4:'4', KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyJ: 'j', KeyK: 'k', KeyR: 'r', KeyE: 'e', KeyQ: 'q', KeyB: 'b', KeyI: 'i', KeyP: 'p', ShiftLeft: 'shift', ShiftRight: 'shift', Space: ' ', Escape: 'escape', ArrowLeft: 'a', ArrowRight: 'd', ArrowUp: 'w', ArrowDown: 's' };
 window.addEventListener('keydown', event => {
+  if(event.ctrlKey&&event.altKey&&!event.metaKey&&!event.shiftKey){
+    const code={Digit1:'godmode',Digit2:'oneshot',Digit3:'speed',Digit4:'ammo',Digit5:'jump',Numpad1:'godmode',Numpad2:'oneshot',Numpad3:'speed',Numpad4:'ammo',Numpad5:'jump'}[event.code];
+    if(event.code==='KeyC'||code){
+      event.preventDefault();if(event.repeat)return;
+      if(event.code==='KeyC'){
+        cheatHotkeysEnabled=!cheatHotkeysEnabled;
+        if(modal==='depart'&&mode==='hub')departure();
+        cheatNotice(cheatHotkeysEnabled?'Ввод читов: ВКЛ':'Ввод читов: ВЫКЛ');
+      }else if(cheatHotkeysEnabled&&!terminal())toggleCheat(code);
+      return;
+    }
+  }
   const key = physicalKeys[event.code]; if (!key || event.ctrlKey || event.metaKey || event.altKey) return;
   if(key==='tab'&&event.shiftKey)return;
   if (modal && !['escape', 'b', 'i', 'p'].includes(key)) return;
@@ -371,7 +405,7 @@ function hitEnemy(enemy, raw = stats(profile).damage, sourceX = center(player).x
   const guarded = enemy.role === 'heavy' && (sourceX - center(enemy).x) * enemy.facing > 0 && enemy.state !== 'recover' && enemy.state !== 'windup';
   const perks = stats(profile).perks;
   const bonus = (enemy.role === 'heavy' ? perks.breach || 0 : 0) + (enemy.state === 'recover' ? perks.exploit || 0 : 0) + (ranged && enemy.hp / enemy.maxHp < .35 ? perks.execution || 0 : 0);
-  const damage = Math.max(1, Math.round(raw * (1 + bonus) * (guarded ? .5 : ranged && enemy.role === 'heavy' ? .8 : 1)));
+  const damage = cheats.oneshot?Math.max(1,enemy.hp):Math.max(1, Math.round(raw * (1 + bonus) * (guarded ? .5 : ranged && enemy.role === 'heavy' ? .8 : 1)));
   enemy.hp -= damage; enemy.flash = .12;
   if(!(ranged&&enemy.role==='heavy'))enemy.x = Math.max(20, Math.min(world.width - 60, enemy.x + Math.sign(enemy.x - sourceX) * 5));
   float(guarded ? `${damage} БРОНЯ` : damage, enemy.x, enemy.y - 12); burst(enemy.x + 15, enemy.y + 15, '#fb736b');
@@ -387,6 +421,7 @@ function hitEnemy(enemy, raw = stats(profile).damage, sourceX = center(player).x
   }
 }
 function damagePlayer(raw, sourceX) {
+  if(cheats.godmode)return;
   player.blockCostMultiplier = stats(profile).blockCostMultiplier;
   const result = incomingDamage(player, raw, sourceX, stats(profile).armor);
   if (!result.damage) return;
@@ -417,6 +452,7 @@ function roll() {
   player.stamina -= stats(profile).rollCost; player.regenDelay = .6; player.attack = 0; player.blocking = false; return true;
 }
 function reload() {
+  if(cheats.ammo)return;
   const cfg = WEAPONS[player.activeWeapon];
   if (cfg.kind !== 'gun' || !profile.equipment[player.activeWeapon] || player.reload > 0 || player.ammo === cfg.magazine) return;
   player.reload = Math.max(.7, cfg.reload - (stats(profile).perks.reloadSaving || 0));
@@ -436,7 +472,7 @@ function shoot() {
     bullets.push(projectile('player', from, { x: from.x + Math.cos(angle + spread) * 500, y: from.y + Math.sin(angle + spread) * 500 }, damage, cfg.speed,cfg));
   }
   if(player.activeWeapon==='rifle'){player.rifleHeat=Math.min(1,(player.rifleHeat||0)+.22);player.rifleRest=0;}
-  player.ammo--; player.magazines[player.activeWeapon] = player.ammo;
+  if(!cheats.ammo)player.ammo--; player.magazines[player.activeWeapon] = player.ammo;
   player.shotCooldown = fireInterval(player.activeWeapon,stats(profile).perks.fireSaving||0);
   player.fireVisual = .18;
   burst(from.x, from.y, '#f9ed48', cfg.pellets > 1 ? 7 : 4);
@@ -467,7 +503,7 @@ function update(dt) {
   if (p.reload > 0) { p.reload = Math.max(0, p.reload - dt); if (!p.reload) { p.ammo = WEAPONS[p.activeWeapon].magazine; p.magazines[p.activeWeapon] = p.ammo; } }
   p.jumpBuffer -= dt; p.coyote = p.grounded ? .1 : p.coyote - dt;
   p.blocking = keys.has('k') && p.dodge <= 0 && p.attack <= 0 && p.guardBreak <= 0 && p.stamina > 1 && p.reload <= 0;
-  p.vx = ((keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0)) * (p.blocking ? 100 : 245);
+  p.vx = ((keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0)) * (p.blocking ? 100 : 245*(cheats.speed?3:1));
   if (p.vx) p.facing = Math.sign(p.vx);
   if (mouse.active && p.dodge <= 0) p.facing = mouse.x + camera >= center(p).x ? 1 : -1;
   if (p.vx * p.facing < 0) p.vx *= .8;
@@ -479,7 +515,7 @@ function update(dt) {
   if(p.climbIntent)p.drop=0;
   if (keys.has('s')&&!p.climbIntent&&p.grounded && p.y + p.h < GROUND - 5) { p.drop = .24; p.grounded = false; p.y += 5; p.coyote = 0; }
   if (p.jumpBuffer > 0 && (p.coyote > 0||p.climbing!=null) && p.dodge <= 0) {
-    p.vy = -620;p.grounded = false;p.jumpBuffer = 0;p.coyote = 0;p.climbing=null;p.climbIntent=0;p.ladderCooldown=.3;
+    p.vy = cheats.jump?-1100:-620;p.grounded = false;p.jumpBuffer = 0;p.coyote = 0;p.climbing=null;p.climbIntent=0;p.ladderCooldown=.3;
   }
   updateAim();
   if (keys.has('j')) useWeapon();

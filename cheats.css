@@ -1,0 +1,15 @@
+.cheat-notice {
+  position: fixed;
+  top: 76px;
+  right: 18px;
+  z-index: 110;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 9px 12px;
+  border-left: 2px solid #59e4de;
+  background: #10101de8;
+  color: #8ef3e7;
+  font: 11px/1.6 Consolas, monospace;
+  box-shadow: 0 4px 16px #0005;
+  pointer-events: none;
+}
+.cheat-notice[hidden] { display: none; }

@@ -1,29 +1,54 @@
 <!doctype html>
 <html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Окружение — Night City Contracts</title>
-<style>body{margin:0;background:#10121e;color:#f0bdce;font:14px system-ui;padding:16px}header{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:12px}button,select{background:#291c2c;color:#f0bdce;border:1px solid #805267;padding:7px}input{accent-color:#f477a1}canvas{display:block;width:min(100%,1400px);height:auto;border:1px solid #4e3445}p{color:#b4afbd}</style>
-<header><button id="pause">Пауза</button><label>Сцена <select id="scene"><option value="hub">Хаб</option><option value="sector">Промзона</option></select></label><label>Камера <input id="camera" type="range" min="0" max="2800" value="0" step="1"></label><span>Неон · частицы у фонарей · пар · сухой асфальт</span></header>
+<style>body{margin:0;background:#10121e;color:#f0bdce;font:14px system-ui;padding:16px}header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px}button,select,input[type=number]{background:#291c2c;color:#f0bdce;border:1px solid #805267;padding:7px}input{accent-color:#f477a1}input[type=number]{width:110px}canvas{display:block;width:min(100%,1400px);height:auto;border:1px solid #4e3445}p{color:#b4afbd}</style>
+<header><button id="pause">Пауза</button><label>Сцена <select id="scene"><option value="hub">Хаб</option></select></label><label>Seed <input id="seed" type="number" value="42" min="0" max="4294967295" step="1"></label><button id="same">Показать seed</button><button id="new">Новая планировка</button><label>Камера X <input id="camera" type="range" min="0" max="200" value="0" step="1"></label><label>Этаж <input id="vertical" type="range" min="0" max="0" value="0" step="1"></label><label>Задник рынка <select id="backdrop"><option value="auto">По seed</option><option value="district">Район</option><option value="metropolis">Мегаполис</option></select></label></header>
 <canvas id="preview" width="1200" height="660"></canvas>
-<p>Перемести камеру, чтобы проверить дорогу на стыках. Пауза останавливает свет и частицы.</p>
+<p id="summary"></p><p>Перемещай камеру по горизонтали и этажам. Пауза останавливает свет и частицы. Персонажи показаны для сравнения масштаба.</p>
 <script type="module">
 import {preloadEnvironment,drawRasterBackdrop,drawRasterEnvironment} from '../src/environment.js';
 import {preloadSprites,drawRasterActor} from '../src/raster.js';
-import {GROUND,DEFAULT_PROFILE} from '../src/world.js';
+import {GROUND,DEFAULT_PROFILE,generateLevel,freshLevelSeed} from '../src/world.js';
+import {LEVEL_KINDS} from '../src/level-layout.js';
 const canvas=document.getElementById('preview'),ctx=canvas.getContext('2d');
-const world={width:4000,platforms:[],chests:[],portal:{x:2100}};
 const hubWorld={width:1400,platforms:[],chests:[],portal:{x:1150,y:GROUND}};
-let time=0,last=0,playing=true;
+const sceneSelect=document.getElementById('scene'),horizontal=document.getElementById('camera'),vertical=document.getElementById('vertical'),seedInput=document.getElementById('seed'),backdropSelect=document.getElementById('backdrop');
+let world=hubWorld,time=0,last=0,playing=true,generatedBackdrop;
 await Promise.all([preloadEnvironment(),preloadSprites()]);
+sceneSelect.innerHTML='<option value="hub">Хаб</option>'+Object.entries(LEVEL_KINDS).map(([kind,info])=>`<option value="${kind}">${info.name}</option>`).join('');
+function regenerate(seed=Number(seedInput.value)>>>0){
+  seedInput.value=seed;
+  world=sceneSelect.value==='hub'?hubWorld:generateLevel(1,seed,sceneSelect.value);
+  generatedBackdrop=world.backdrop;
+  horizontal.max=Math.max(0,world.width-canvas.width);horizontal.value=0;
+  vertical.min=world.top||0;vertical.value=0;vertical.disabled=Number(vertical.min)===0;
+  backdropSelect.disabled=world.kind!=='market';
+  document.getElementById('new').disabled=sceneSelect.value==='hub';
+  document.getElementById('same').disabled=sceneSelect.value==='hub';seedInput.disabled=sceneSelect.value==='hub';
+  applyBackdrop();return world;
+}
+function applyBackdrop(){
+  if(world.kind==='market')world.backdrop=backdropSelect.value==='auto'?generatedBackdrop:backdropSelect.value;
+  document.getElementById('summary').textContent=`${world.name||'Хаб'} · ${world.width}px${world.kind?' · Seed '+world.seed+' · '+world.floors.length+' ярусов':''}${world.kind==='market'?' · Задник: '+(world.backdrop==='metropolis'?'мегаполис':'район'):''}`;
+  draw();
+}
 function draw(){
-  const camera=Number(document.getElementById('camera').value),mode=document.getElementById('scene').value;
+  const camera=Number(horizontal.value),cameraY=Number(vertical.value),mode=sceneSelect.value==='hub'?'hub':'expedition';
   ctx.fillStyle='#101528';ctx.fillRect(0,0,canvas.width,canvas.height);
-  drawRasterBackdrop(ctx,canvas,camera,time,mode==='hub'?hubWorld:{kind:'industrial'});ctx.save();ctx.translate(-camera,0);
-  drawRasterEnvironment(ctx,canvas,mode==='hub'?hubWorld:world,mode,camera,time);
-  for(const x of [220,1050,1900,2800])if(x>camera-100&&x<camera+canvas.width+100){ctx.save();ctx.translate(x,GROUND);drawRasterActor(ctx,{grounded:true,animation:{name:'idle',time}},'hero',DEFAULT_PROFILE.equipment,{height:60});ctx.restore();}
+  drawRasterBackdrop(ctx,canvas,camera,time,world,cameraY);ctx.save();ctx.translate(-camera,-cameraY);
+  drawRasterEnvironment(ctx,canvas,world,mode,camera,time);
+  const references=[];
+  for(let x=220;x<world.width;x+=900)references.push({x,y:GROUND});
+  for(const p of world.platforms)if(p.art==='hotelBalcony'||p.deck&&p.w>=150)references.push({x:p.x+p.w*.5,y:p.y});
+  for(const {x,y}of references)if(x>camera-100&&x<camera+canvas.width+100&&y>cameraY-100&&y<cameraY+canvas.height+100){ctx.save();ctx.translate(x,y);drawRasterActor(ctx,{grounded:true,animation:{name:'idle',time}},'hero',DEFAULT_PROFILE.equipment,{height:60});ctx.restore();}
   ctx.restore();
 }
 document.getElementById('pause').onclick=()=>{playing=!playing;document.getElementById('pause').textContent=playing?'Пауза':'Продолжить';};
-window.environmentPreview={setTime(t){playing=false;time=t;draw();},setCamera(x){document.getElementById('camera').value=x;draw();},setScene(value){document.getElementById('scene').value=value;draw();}};
+sceneSelect.onchange=()=>regenerate();
+document.getElementById('same').onclick=()=>regenerate();document.getElementById('new').onclick=()=>regenerate(freshLevelSeed());
+horizontal.oninput=vertical.oninput=draw;backdropSelect.onchange=applyBackdrop;
+window.environmentPreview={setTime(t){playing=false;time=t;document.getElementById('pause').textContent='Продолжить';draw();},setCamera(x,y=0){horizontal.value=x;vertical.value=y;draw();},setScene(value){sceneSelect.value=value==='sector'?'industrial':value;if(!sceneSelect.value)sceneSelect.value='hub';return regenerate();},generate(seed,kind=sceneSelect.value){sceneSelect.value=kind==='sector'?'industrial':kind;if(!sceneSelect.value)sceneSelect.value='hub';return regenerate(seed);},getWorld(){return world;}};
+regenerate();
 window.environmentPreviewReady=true;
 function frame(now){if(playing)time+=last?Math.min(.05,(now-last)/1000):0;last=now;draw();requestAnimationFrame(frame);}requestAnimationFrame(frame);
 </script></html>
