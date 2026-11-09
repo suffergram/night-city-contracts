@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {LOCATION_SOURCE_SIZES,fitScenery,sceneryContactInset} from '../src/scenery-sizes.js';
 import {generateLevel,GROUND} from '../src/world.js';
 import {marketMerchandise,createDressing} from '../src/dressing.js';
-import {MARKET_STALLS,marketStyle,isMarketStall,stallBody} from '../src/market-stalls.js';
+import {MARKET_STALLS,marketStyle,isMarketStall,stallBody,STALL_JOIN_OVERLAP} from '../src/market-stalls.js';
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`);
 
 test('all scenery sprites use one scale factor and remain anchored to the box bottom',()=>{
@@ -34,10 +34,10 @@ test('market uses varied clusters of two or three stalls, distinct storefronts a
     let previous=null;
     for(const members of groups.values()){
       assert.ok(members.length===2||members.length===3);triples+=members.length===3;
-      if(previous){const gap=members[0].x-previous.x-previous.w,hotel=world.decor.find(d=>d.kind==='marketHotel'&&d.x>previous.x&&d.x<members[0].x);assert.ok(gap>=74&&(hotel||gap<=186));passages.add(Math.round(gap));}
+      if(previous){const gap=members[0].x-previous.x-previous.w,anchor=world.decor.find(d=>['marketHotel','marketBuilding'].includes(d.kind)&&d.x>previous.x&&d.x<members[0].x);assert.ok(gap>=74&&(anchor||gap<=186));passages.add(Math.round(gap));}
       for(let i=0;i<members.length;i++){
         const d=members[i];seen.add(d.style);sizes.add(Math.round(d.w));
-        if(i){const last=members[i-1],gap=stallBody(d).left-stallBody(last).right;if(Math.abs(gap)<1e-7){touching++;assert.ok(d.x<last.x+last.w,'protruding canopies overlap while walls meet');}else{assert.ok(gap>=4-1e-7&&gap<=16+1e-7);separated++;}assert.notEqual(d.style,last.style);}
+        if(i){const last=members[i-1],gap=stallBody(d).left-stallBody(last).right;if(Math.abs(gap+STALL_JOIN_OVERLAP)<1e-7){touching++;assert.ok(d.x<last.x+last.w,'adjoining posts overlap slightly to hide the transparent edge');}else{assert.ok(gap>=4-1e-7&&gap<=16+1e-7);separated++;}assert.notEqual(d.style,last.style);}
       }
       previous=members.at(-1);
     }

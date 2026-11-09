@@ -90,7 +90,7 @@ export function generateLevel(depth, seed = freshLevelSeed(), kind) {
   const shuffle=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
   const slots=shuffle(layout.slots),selected=[];
   const enemyCount=7+Math.floor(rng()*3)+Math.min(2,Math.floor(depth/5));
-  for(const floor of shuffle(layout.floors.map((_,i)=>i))){const s=slots.find(s=>s.floor===floor);if(s&&!selected.includes(s))selected.push(s);}
+  for(const floor of shuffle(layout.floors.map((_,i)=>i))){const s=slots.find(s=>s.floor===floor);if(s&&!selected.includes(s)&&selected.length<enemyCount)selected.push(s);}
   for(const s of slots)if(selected.length<enemyCount&&!selected.includes(s))selected.push(s);
   const roles=shuffle(['gunner','runner','heavy']);
   for (const [index,s]of selected.entries()) {

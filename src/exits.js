@@ -23,7 +23,7 @@ export function exitBounds(world){
 // Park vehicles in street openings; keep their scale even in a narrow frontage.
 export function streetExit(layout,ground,rightStart,rng){
   const style=EXIT_STYLES[layout.kind],blocked=layout.platforms.filter(p=>!p.ground&&!p.stair&&p.y<ground&&p.y+p.h>ground-style.h).map(p=>({x:p.x-6,w:p.w+12}));
-  for(const d of layout.decor)if(['container','foodStall','techStall','clothesStall','marketHotel'].includes(d.kind))blocked.push({x:d.x-6,w:d.w+12});
+  for(const d of layout.decor)if(['container','foodStall','techStall','clothesStall','marketHotel','marketBuilding'].includes(d.kind))blocked.push({x:d.x-6,w:d.w+12});
   blocked.sort((a,b)=>a.x-b.x);
   const gaps=[];let x=52;
   for(const b of blocked){if(b.x>x)gaps.push({x,w:b.x-x});x=Math.max(x,b.x+b.w);}

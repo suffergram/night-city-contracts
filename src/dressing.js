@@ -34,7 +34,7 @@ function sceneRandom(seed){
   return ()=>{state=(state+0x6D2B79F5)|0;let t=Math.imul(state^state>>>15,1|state);t^=t+Math.imul(t^t>>>7,61|t);return ((t^t>>>14)>>>0)/4294967296;};
 }
 export function dressingExclusions(world,ground,kind=world.kind||'hub'){
-  const occupied=(world.decor||[]).filter(d=>d.kind!=='crane').map(d=>({x:d.x,y:['container','foodStall','techStall','clothesStall','canopy','marketHotel'].includes(d.kind)?d.y:d.y-d.h,w:d.w,h:d.h}));
+  const occupied=(world.decor||[]).filter(d=>d.kind!=='crane').map(d=>({x:d.x,y:['container','foodStall','techStall','clothesStall','canopy','marketHotel','marketBuilding'].includes(d.kind)?d.y:d.y-d.h,w:d.w,h:d.h}));
   for(const l of world.ladders||[])occupied.push({x:l.x-24,y:l.top-12,w:48,h:l.bottom-l.top+24});
   for(const s of world.stairs||[])occupied.push({x:Math.min(s.lower.x,s.upper.x)-22,y:s.upper.y-60,w:Math.abs(s.lower.x-s.upper.x)+44,h:s.lower.y-s.upper.y+70});
   for(const c of world.chests||[])occupied.push({x:c.x-12,y:c.y-15,w:63,h:55});

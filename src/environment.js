@@ -4,6 +4,8 @@ import {createDressing,DETAIL_SPRITES} from './dressing.js';
 import {fitScenery,sceneryContactInset} from './scenery-sizes.js';
 import {marketCell,marketStyle,isMarketStall} from './market-stalls.js';
 import {MARKET_HOTELS} from './market-hotels.js';
+import {MARKET_BUILDINGS} from './market-buildings.js';
+import {drawBuildingAtmosphere} from './building-atmosphere.js';
 import {HOTEL_ATMOSPHERE} from './hotel-atmosphere.js';
 import {withUnlitBase,drawSpriteEmission} from './sprite-lighting.js';
 import {OBJECT_LIGHTS} from './object-lights.js';
@@ -12,6 +14,14 @@ import {drawTransportExit} from './exit-render.js';
 import {lightLevel,controlledLight,ambientGlow,drawLampAtmosphere,drawVentSteam,drawCityTraffic,drawHologram,drawScreenAnimation,drawCookingSteam,drawStallLights,drawHarbourHaze,drawElectricalFault,drawSceneDust,drawWarningBeacon} from './ambient.js';
 
 export const ENVIRONMENT_ASSETS = {
+  buildingHousingA:new URL('../assets/environment/market-building-housing-a-v1.png',import.meta.url).href,
+  buildingHousingB:new URL('../assets/environment/market-building-housing-b-v1.png',import.meta.url).href,
+  buildingMinimarketA:new URL('../assets/environment/market-building-minimarket-a-v1.png',import.meta.url).href,
+  buildingMinimarketB:new URL('../assets/environment/market-building-minimarket-b-v1.png',import.meta.url).href,
+  buildingRepairA:new URL('../assets/environment/market-building-repair-a-v1.png',import.meta.url).href,
+  buildingRepairB:new URL('../assets/environment/market-building-repair-b-v1.png',import.meta.url).href,
+  buildingLaundryA:new URL('../assets/environment/market-building-laundry-a-v1.png',import.meta.url).href,
+  buildingLaundryB:new URL('../assets/environment/market-building-laundry-b-v1.png',import.meta.url).href,
   farCity: new URL('../assets/environment/skyline-dry-v2.png', import.meta.url).href,
   midCity: new URL('../assets/environment/district-dry-v2.png', import.meta.url).href,
   nearCity: new URL('../assets/environment/walls-dry-v2.png', import.meta.url).href,
@@ -106,7 +116,7 @@ function prop(index,atlas='props') {
   const image = images.get(atlas); if (!image) return null;
   const col = index % 4, row = Math.floor(index / 4);
   const rows=atlas==='props'?3:4;
-  const cell=atlas.startsWith('hotel')||atlas.startsWith('exit')?{x:0,y:0,w:image.width,h:image.height}:atlas==='market'?marketCell(index,image.width,image.height):{x:Math.round(col*image.width/4),y:Math.round(row*image.height/rows),w:Math.round((col+1)*image.width/4)-Math.round(col*image.width/4),h:Math.round((row+1)*image.height/rows)-Math.round(row*image.height/rows)};
+  const cell=/^(hotel|exit|building)/.test(atlas)?{x:0,y:0,w:image.width,h:image.height}:atlas==='market'?marketCell(index,image.width,image.height):{x:Math.round(col*image.width/4),y:Math.round(row*image.height/rows),w:Math.round((col+1)*image.width/4)-Math.round(col*image.width/4),h:Math.round((row+1)*image.height/rows)-Math.round(row*image.height/rows)};
   const {x,y,w,h}=cell;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true }); ctx.drawImage(image, x, y, w, h, 0, 0, w, h);
@@ -380,6 +390,13 @@ function drawLocation(ctx,canvas,world,camera,time){
   for(const original of world.decor){
     let d=original;
     if(d.kind==='crane'||!visible(d))continue;
+    if(d.kind==='marketBuilding'){
+      const atlas=MARKET_BUILDINGS[d.style].asset;
+      ctx.save();ctx.beginPath();ctx.rect(d.x-2,d.y-2,d.w+4,GROUND-d.y+3);ctx.clip();
+      drawLocationProp(ctx,0,d.x,d.y,d.w,d.h,0,false,atlas,time);
+      drawBuildingAtmosphere(ctx,d,prop(0,atlas),time);
+      ctx.restore();continue;
+    }
     if(d.kind==='marketHotel'){
       ctx.save();ctx.beginPath();ctx.rect(d.x-2,d.y-2,d.w+4,GROUND-d.y+3);ctx.clip();
       drawLocationProp(ctx,0,d.x,d.y,d.w,d.h,0,false,MARKET_HOTELS[d.style].asset,time);

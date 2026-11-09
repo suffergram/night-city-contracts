@@ -11,7 +11,8 @@ export const MARKET_STALLS = {
   'food-original':{kind:'foodStall',atlas:'locations',frame:4,size:LOCATION_SOURCE_SIZES[4],body:[.085,.97]},
   'tech-original':{kind:'techStall',atlas:'locations',frame:5,size:LOCATION_SOURCE_SIZES[5],body:[.05,.96]},
 };
-const bodies=[[.04,.965],[.02,.975],[.03,.97],[.06,.96],[.035,.975],[.022,.978],[.042,.969],[.03,.976],[.035,.973]];
+// Edges of the supporting posts/counter, excluding awnings, baskets and barrels.
+const bodies=[[.089,.960],[.135,.966],[.118,.933],[.096,.904],[.054,.944],[.041,.952],[.073,.934],[.056,.949],[.063,.958]];
 for(const [frame,id]of ['food-tea','food-grill','food-deli','tech-repair','tech-cyberware','tech-electronics','clothes-tailor','clothes-boutique','clothes-streetwear'].entries()){
   MARKET_STALLS[id]={kind:frame<3?'foodStall':frame<6?'techStall':'clothesStall',atlas:'market',frame,size:sizes[frame],body:bodies[frame],cooking:id!=='food-deli'};
 }
@@ -20,4 +21,5 @@ export const marketStallSize=(style,height=105)=>({w:height*MARKET_STALLS[style]
 export const isMarketStall=kind=>['foodStall','techStall','clothesStall'].includes(kind);
 // Join structural walls; awnings, lanterns and baskets may overlap naturally.
 export const stallBody=d=>{const [left,right]=marketStyle(d).body;return {left:d.x+d.w*left,right:d.x+d.w*right};};
-export const stallAdvance=(a,b,gap=0)=>a.w*MARKET_STALLS[a.style].body[1]-b.w*MARKET_STALLS[b.style].body[0]+gap;
+export const STALL_JOIN_OVERLAP=2;
+export const stallAdvance=(a,b,gap=0)=>a.w*MARKET_STALLS[a.style].body[1]-b.w*MARKET_STALLS[b.style].body[0]+(gap>0?gap:-STALL_JOIN_OVERLAP);

@@ -79,7 +79,7 @@ test('market hotels are complete ground-standing buildings with reachable balcon
       assert.ok(!w.ladders.some(l=>l.top===balcony.y&&l.bottom===GROUND&&l.x>d.x&&l.x<d.x+d.w));
       assert.ok(w.ladders.some(l=>l.top===roof.y&&l.bottom===balcony.y));
       assert.ok(w.lamps.every(l=>l.x<d.x-15||l.x>d.x+d.w+15));
-      assert.ok(w.decor.every(s=>s===d||s.x+s.w<=d.x||s.x>=d.x+d.w));
+      assert.ok(w.decor.every(s=>s===d||s.x+s.w<=d.x||s.x>=d.x+d.w-18),'only the adjoining stall canopy may overlap the facade edge');
     }
   }
   assert.ok(count>=60);assert.equal(variants.size,3);

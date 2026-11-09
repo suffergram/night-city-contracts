@@ -47,13 +47,13 @@ export function drawLampAtmosphere(ctx,x,y,height,time,seed,level) {
     ctx.save();ctx.globalAlpha*=p.alpha*level;ctx.fillStyle='#ffe4aa';ctx.fillRect(p.x,p.y,p.size,p.size);ctx.restore();
   }
 }
-export function drawVentSteam(ctx,x,y,size,time,seed) {
+export function drawVentSteam(ctx,x,y,size,time,seed,intensity=1) {
   const texture=stamp('#d3dce2'),alpha=ctx.globalAlpha;
   ctx.save();ctx.globalCompositeOperation='source-over';
   for(let i=0;i<10;i++){
     const phase=((time*.19+i/10+noise(seed))%1+1)%1,radius=size*(.09+phase*.25);
     const drift=Math.sin(phase*6+seed+i*.15)*size*.09+phase*size*.23;
-    ctx.globalAlpha=alpha*.32*Math.sin(phase*Math.PI);
+    ctx.globalAlpha=Math.min(1,alpha*.32*intensity*Math.sin(phase*Math.PI));
     ctx.drawImage(texture,x+drift-radius*.8,y-phase*size*1.2-radius,radius*1.6,radius*2.1);
   }
   ctx.restore();

@@ -41,7 +41,7 @@ function draw(){
   drawRasterEnvironment(ctx,canvas,world,mode,camera,time);
   const references=[];
   for(let x=220;x<world.width;x+=900)references.push({x,y:GROUND});
-  for(const p of world.platforms)if(p.art==='hotelBalcony'||p.deck&&p.w>=150)references.push({x:p.x+p.w*.5,y:p.y});
+  for(const p of world.platforms)if(['hotelBalcony','buildingGallery'].includes(p.art)||p.deck&&p.w>=150)references.push({x:p.x+p.w*.5,y:p.y});
   for(const {x,y}of references)if(x>camera-100&&x<camera+canvas.width+100&&y>cameraY-100&&y<cameraY+canvas.height+100){ctx.save();ctx.translate(x,y);drawRasterActor(ctx,{grounded:true,animation:{name:'idle',time}},'hero',DEFAULT_PROFILE.equipment,{height:60});ctx.restore();}
   ctx.restore();
 }
