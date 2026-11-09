@@ -19,7 +19,7 @@ export function drawWorld(ctx, canvas, state) {
   ctx.clearRect(0, 0, W, H);
   if (!drawRasterBackdrop(ctx, canvas, camera,time,world,cameraY)) rect(0, 0, W, H, '#101528');
   ctx.save(); ctx.translate(-Math.round(camera) + (shake > 0 ? Math.sin(time * 90) * 3 : 0), -Math.round(cameraY));
-  if (!drawRasterEnvironment(ctx, canvas, world, mode, camera,time)) {
+  if (!drawRasterEnvironment(ctx, canvas, world, mode, camera,time,cameraY)) {
     rect(camera, GROUND, W, H - GROUND, '#151b29');
     for (const platform of world.platforms) if (!platform.ground) rect(platform.x, platform.y, platform.w, platform.h, '#343d50');
   }

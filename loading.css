@@ -1,0 +1,13 @@
+.loading-screen{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;background:#0b0d17;color:#f7b6c6;font-family:Consolas,monospace}
+.loading-screen[hidden]{display:none}
+.loading-card{width:min(520px,80vw);padding:36px;border:1px solid #864153;background:linear-gradient(135deg,#251520,#111522);box-shadow:0 0 90px #ff416414}
+.loading-card small{color:#ff738e;letter-spacing:3px;font-size:10px}
+.loading-card h2{font-size:clamp(19px,3vw,28px);margin:22px 0 28px}
+.loading-card progress{appearance:none;width:100%;height:5px;border:0;background:#42232f;accent-color:#63ebe6}
+.loading-card progress::-webkit-progress-bar{background:#42232f}
+.loading-card progress::-webkit-progress-value{background:#63ebe6}
+.loading-card progress::-moz-progress-bar{background:#63ebe6}
+.loading-status{display:flex;justify-content:space-between;gap:16px;margin-top:14px;font-size:12px;min-height:30px}
+.loading-status b{color:#63ebe6}
+.loading-card button{margin-top:18px;background:#63ebe6;color:#111522;border:0;padding:12px 18px;cursor:pointer;font:inherit}
+.loading-card button[hidden]{display:none}

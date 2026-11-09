@@ -110,13 +110,37 @@ const CITY_SCREENS={
   metropolisFar:[{r:[.806,.085,.115,.36],colour:'#e556c3'},{r:[.225,.02,.08,.28],colour:'#53ddea'}],
   metropolisMid:[{r:[.388,.33,.063,.25],colour:'#53ddea'},{r:[.633,.405,.044,.24],colour:'#e556c3'},{r:[.10,.38,.04,.18],colour:'#53ddea'}],
 };
-export function preloadEnvironment() {
+export function preloadEnvironment(onProgress=()=>{}) {
   if (typeof Image === 'undefined') return Promise.resolve();
   return loading ||= Promise.all(Object.entries(ENVIRONMENT_ASSETS).map(([id, url]) => new Promise((resolve, reject) => {
-    const image = new Image(); image.onload = () => { images.set(id, image);if(id.endsWith('Off')){slices.clear();detailMaterials.clear();locationVariants.clear();}resolve(); }; image.onerror = () => reject(new Error(`Cannot load ${url}`)); image.src = url;
+    const image = new Image(); image.onload = async () => { try{await image.decode?.();images.set(id, image);if(id.endsWith('Off')){slices.clear();detailMaterials.clear();locationVariants.clear();}onProgress(id);resolve();}catch(error){reject(error);} }; image.onerror = () => reject(new Error(`Cannot load ${url}`)); image.src = url;
   })));
 }
 export function environmentDiagnostics() { return Object.fromEntries(Object.keys(ENVIRONMENT_ASSETS).map(id => [id, images.has(id)])); }
+// Prepare pixel masks and light layers between loading-screen paints, not in combat.
+export async function prepareEnvironment(onProgress=()=>{}){
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=128;
+  const ctx=canvas.getContext('2d'),tasks=[];
+  for(const [atlas,count]of Object.entries({props:12,locations:16,market:9,life:16,worksite:16})){
+    for(let index=0;index<count;index++)tasks.push(()=>{
+      const p=prop(index,atlas);if(!p)return;
+      drawLights(ctx,p,atlas==='props'?PROP_LIGHTS[index]||[]:OBJECT_LIGHTS[atlas]?.[index]||[],0,0,100,100,0,index,atlas+':'+index);
+      for(const def of Object.values(DETAIL_SPRITES))if(def.atlas===atlas&&def.frame===index)detailMaterial(p,def);
+    });
+  }
+  for(const [style,def]of Object.entries(MARKET_HOTELS))tasks.push(()=>{
+    drawLocationProp(ctx,0,0,0,100,100,0,false,def.asset,0);
+    drawHotelAtmosphere(ctx,{style,x:0,y:0,w:100,h:100},prop(0,def.asset),0);
+  });
+  for(const [style,def]of Object.entries(MARKET_BUILDINGS))tasks.push(()=>{
+    drawBuildingAtmosphere(ctx,{style,x:0,y:0,w:100,h:100},prop(0,def.asset),0,images.get(def.asset+'Lit'));
+  });
+  for(const atlas of Object.keys(ENVIRONMENT_ASSETS).filter(id=>id.startsWith('exit')&&!id.endsWith('Off')))tasks.push(()=>prop(0,atlas));
+  for(const [i,task]of tasks.entries()){
+    ctx.clearRect(0,0,128,128);task();onProgress((i+1)/tasks.length);
+    await new Promise(resolve=>setTimeout(resolve,0));
+  }
+}
 // Trim transparent padding once; props can then be placed exactly on collision surfaces.
 function prop(index,atlas='props') {
   const key=atlas+':'+index;
@@ -198,6 +222,7 @@ export function drawRasterBackdrop(ctx, canvas, camera,time=0,world=null,cameraY
       const c=tile.getContext('2d');c.filter='brightness(.7) saturate(.65)';c.drawImage(image,0,0,bay,rise);layerSurfaces.set(tileKey,tile);
     }
     for(const y of world.floors){
+      if(y<cameraY-30||y-rise>cameraY+canvas.height+30)continue;
       ctx.fillStyle='#242b2c';ctx.fillRect(camera,y-rise,canvas.width,rise);
       const tile=layerSurfaces.get(tileKey);
       for(let x=Math.floor(camera/bay)*bay;x<camera+canvas.width;x+=bay){
@@ -213,7 +238,7 @@ export function drawRasterBackdrop(ctx, canvas, camera,time=0,world=null,cameraY
       ctx.fillStyle='#53605b';ctx.fillRect(camera,y-14,canvas.width,2);
     }
     for(const lamp of world.wallLights||[]){
-      if(lamp.x<camera-100||lamp.x>camera+canvas.width+100)continue;
+      if(lamp.x<camera-100||lamp.x>camera+canvas.width+100||lamp.y+160<cameraY||lamp.y>cameraY+canvas.height+100)continue;
       const {x,y,colour}=lamp,level=lightLevel(time,x,false);
       ambientGlow(ctx,x,y+20,90,colour,.16*level);
       const beam=ctx.createLinearGradient(x,y,x,y+120);beam.addColorStop(0,'#a7e3d219');beam.addColorStop(1,'#a7e3d200');
@@ -258,9 +283,9 @@ export function drawRasterBackdrop(ctx, canvas, camera,time=0,world=null,cameraY
   }
   return true;
 }
-export function drawRasterEnvironment(ctx, canvas, world, mode, camera,time=0) {
+export function drawRasterEnvironment(ctx, canvas, world, mode, camera,time=0,cameraY=0) {
   if (!images.has('props')) return false;
-  if(mode!=='hub'&&world.kind)return drawLocation(ctx,canvas,world,camera,time);
+  if(mode!=='hub'&&world.kind)return drawLocation(ctx,canvas,world,camera,time,cameraY);
   drawRoad(ctx,canvas,camera);
   drawDetails(ctx,canvas,world,camera,time,mode==='hub'?'hub':'industrial');
   for (const platform of world.platforms) {
@@ -306,14 +331,14 @@ function detailMaterial(p,def){
   }
   return detailMaterials.get(key);
 }
-function drawDetails(ctx,canvas,world,camera,time,kind=world.kind){
+function drawDetails(ctx,canvas,world,camera,time,kind=world.kind,cameraY=0){
   let details=world.details;
   if(!details){
     let cached=detailLayouts.get(world);if(!cached){cached={};detailLayouts.set(world,cached);}
     details=cached[kind] ||= createDressing(world,731,GROUND,kind);
   }
   for(const d of details){
-    if(d.x+d.w<camera-20||d.x>camera+canvas.width+20)continue;
+    if(d.x+d.w<camera-20||d.x>camera+canvas.width+20||d.y+d.h<cameraY-100||d.y>cameraY+canvas.height+100)continue;
     const def=DETAIL_SPRITES[d.sprite],p=prop(def.frame,def.atlas);if(!p)continue;
     const material=detailMaterial(p,def);
     const y=d.y+(d.wall?0:1+p.contactInset*d.h/p.h);
@@ -389,12 +414,12 @@ function drawDeck(ctx,x,y,w,h){
   const tileWidth=p.w/p.h*h;
   for(let xx=x;xx<x+w;xx+=tileWidth){const width=Math.min(tileWidth,x+w-xx);ctx.drawImage(p.image,p.x,p.y,p.w*width/tileWidth,p.h,xx,y,width,h);}
 }
-function drawLocation(ctx,canvas,world,camera,time){
+function drawLocation(ctx,canvas,world,camera,time,cameraY=0){
   if(world.kind!=='megablock')drawRoad(ctx,canvas,camera);
   else{ctx.fillStyle='#080c15';ctx.fillRect(camera,GROUND,canvas.width,canvas.height+Math.abs(world.top));}
-  const visible=o=>o.x+o.w>camera-100&&o.x<camera+canvas.width+100;
+  const visible=o=>o.x+o.w>camera-100&&o.x<camera+canvas.width+100&&o.y+o.h>cameraY-160&&o.y-o.h<cameraY+canvas.height+160;
   for(const d of world.decor.filter(d=>d.kind==='crane'&&visible(d))){ctx.save();ctx.globalAlpha=.65;drawLocationProp(ctx,2,d.x,d.y-d.h,d.w,d.h,0,false,'locations',time);ctx.restore();}
-  drawDetails(ctx,canvas,world,camera,time);
+  drawDetails(ctx,canvas,world,camera,time,world.kind,cameraY);
   for(const original of world.decor){
     let d=original;
     if(d.kind==='crane'||!visible(d))continue;
@@ -448,7 +473,7 @@ function drawLocation(ctx,canvas,world,camera,time){
     }
   }
   for(const p of world.platforms){
-    if(p.x+p.w<camera||p.x>camera+canvas.width)continue;
+    if(p.x+p.w<camera||p.x>camera+canvas.width||p.y<cameraY-80||p.y>cameraY+canvas.height+80)continue;
     if(p.ground){if(world.kind==='megablock')drawDeck(ctx,0,GROUND,world.width,20);continue;}
     if(p.stair)continue; // Open metal treads are drawn with their flight below.
     if(!p.art||p.art==='canopy'||p.art==='pavilionRoof'){
@@ -459,7 +484,7 @@ function drawLocation(ctx,canvas,world,camera,time){
   }
   for(const flight of world.stairs){
     const a=flight.lower,b=flight.upper;
-    if(Math.max(a.x,b.x)<camera||Math.min(a.x,b.x)>camera+canvas.width)continue;
+    if(Math.max(a.x,b.x)<camera||Math.min(a.x,b.x)>camera+canvas.width||Math.max(a.y,b.y)<cameraY-80||Math.min(a.y,b.y)>cameraY+canvas.height+80)continue;
     ctx.save();ctx.lineJoin='round';
     const stroke=(x1,y1,x2,y2,colour,width=1)=>{ctx.strokeStyle=colour;ctx.lineWidth=width;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();};
     // Twin steel stringers, attached to bolted floor plates, leave the flight open.
@@ -491,7 +516,7 @@ function drawLocation(ctx,canvas,world,camera,time){
     }
     ctx.restore();
   }
-  for(const l of world.ladders)if(l.x>camera-30&&l.x<camera+canvas.width+30){
+  for(const l of world.ladders)if(l.x>camera-30&&l.x<camera+canvas.width+30&&l.bottom>cameraY-30&&l.top<cameraY+canvas.height+30){
     const p=prop(11,'locations');
     if(p){const tileHeight=24*p.h/p.w;for(let yy=l.top;yy<l.bottom;yy+=tileHeight){const h=Math.min(tileHeight,l.bottom-yy);ctx.drawImage(p.image,p.x,p.y,p.w,p.h*h/tileHeight,l.x-12,yy,24,h);}}
     ambientGlow(ctx,l.x,l.top+6,12,'#5aede6',.13);

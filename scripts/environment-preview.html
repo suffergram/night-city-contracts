@@ -38,7 +38,7 @@ function draw(){
   const camera=Number(horizontal.value),cameraY=Number(vertical.value),mode=sceneSelect.value==='hub'?'hub':'expedition';
   ctx.fillStyle='#101528';ctx.fillRect(0,0,canvas.width,canvas.height);
   drawRasterBackdrop(ctx,canvas,camera,time,world,cameraY);ctx.save();ctx.translate(-camera,-cameraY);
-  drawRasterEnvironment(ctx,canvas,world,mode,camera,time);
+  drawRasterEnvironment(ctx,canvas,world,mode,camera,time,cameraY);
   const references=[];
   for(let x=220;x<world.width;x+=900)references.push({x,y:GROUND});
   for(const p of world.platforms)if(['hotelBalcony','buildingGallery'].includes(p.art)||p.deck&&p.w>=150)references.push({x:p.x+p.w*.5,y:p.y});

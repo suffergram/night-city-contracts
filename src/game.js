@@ -3,9 +3,10 @@ import { center, physics, segmentHit, projectile, projectileStep, projectileDama
 import { drawWorld, drawMinimap } from './render.js';
 import { BRANCHES, SKILLS, availablePoints, spentPoints, skillBudget, skillStatus, learnSkill } from './skills.js';
 import { advanceAnimation, animationInfo } from './animation.js';
-import { preloadSprites, previewMarkup, paintPreviews } from './raster.js';
+import { preloadSprites, prepareSprites, SPRITES, previewMarkup, paintPreviews } from './raster.js';
 import { aimAngle, aimedMuzzle, aimDirection } from './aim.js';
-import { preloadEnvironment } from './environment.js';
+import { preloadEnvironment, prepareEnvironment, ENVIRONMENT_ASSETS } from './environment.js';
+import {showLoading,loadingProgress,hideLoading,loadingError,nextPaint} from './loading.js';
 import {findStairwell,useStairwell} from './stairwells.js';
 import { ACTOR_HEIGHT, WEAPONS, weaponSlots, slotForKey, rifleSpread, coolRifle, fireInterval } from './weapons.js';
 
@@ -31,6 +32,8 @@ const cheats={godmode:false,oneshot:false,speed:false,ammo:false,jump:false};
 const cheatNames={godmode:'Неуязвимость',oneshot:'Убийство с одного попадания',speed:'Быстрый бег ×3',ammo:'Бесконечные патроны',jump:'Мегапрыжок'};
 const cheatLocations={industrial:'Промзона',port:'Порт',market:'Рынок',megablock:'Мегаблок'};
 let cheatHotkeysEnabled=false,cheatNoticeTimer;
+let loadingScene=true,nextMinimap=0,lastInteraction='',lastReloadStatus='',preparedEquipment='';
+const equipmentSignature=()=>JSON.stringify(['head','torso','legs','feet'].map(slot=>profile.equipment[slot]?[profile.equipment[slot].id,profile.equipment[slot].rarity]:null));
 player.aimAngle = 0;
 const rarityNames = ['Стандарт', 'Редкий', 'Легендарный'], rarityClasses = ['', 'rare', 'epic'];
 const icons = { weapon: '⚔', gun: '⌐', rifle: '⌁', shotgun: '═', head: '▱', torso: '◈', legs: 'Ⅱ', feet: '⌁' };
@@ -76,11 +79,14 @@ function updateHUD() {
   }
 }
 function renderHotbar() {
+  lastReloadStatus='';
   $('weapon-bar').innerHTML = weaponSlots.map(slot => `<button id="hot-slot-${slot}" class="weapon-slot ${player.activeWeapon === slot ? 'selected' : ''}" data-weapon="${slot}" aria-label="${WEAPONS[slot].name}" aria-pressed="${player.activeWeapon === slot}"><kbd>${WEAPONS[slot].key}</kbd><span class="weapon-symbol weapon-art ${slot}" aria-hidden="true"></span><strong>${WEAPONS[slot].short}</strong><small id="hot-ammo-${slot}"></small><span id="hot-reload-${slot}" class="weapon-reload" aria-hidden="true"></span></button>`).join('');
   updateReloadIndicator();
 }
 function updateReloadIndicator(){
   const progress=player.reloadDuration>0?Math.max(0,Math.min(1,1-player.reload/player.reloadDuration)):0;
+  const status=player.activeWeapon+':'+(player.reload>0?Math.round(progress*1000):'idle');
+  if(status===lastReloadStatus)return;lastReloadStatus=status;
   for(const slot of weaponSlots){
     const active=slot===player.activeWeapon&&player.reload>0;
     $('hot-slot-'+slot).classList.toggle('reloading',active);
@@ -136,14 +142,18 @@ function resetCombat() {
   player.magazines = Object.fromEntries(weaponSlots.filter(slot => WEAPONS[slot].magazine).map(slot => [slot, WEAPONS[slot].magazine]));
   player.ammo = player.magazines[player.activeWeapon] ?? 0;
 }
-function hub() {
+function hub(){return loadScene('Возвращение в убежище',setupHub);}
+function setupHub() {
   mode = 'hub';
   world = { width: 1400, platforms: [{ x: 0, y: GROUND, w: 1400, h: 160, ground: true }], enemies: [], chests: [], portal: { x: 1150, y: GROUND } };
   resetCombat(); Object.assign(player, { x: 565, y: GROUND - player.h, hp: stats(profile).maxHp });
   stock = Object.keys(SLOTS).map(slot => makeItem(recommendedDepth(profile), Math.random, slot));
   camera = 0;cameraY=0; closeModal(); save(); updateUI();
 }
-function expedition(depth = recommendedDepth(profile),kind,reroll=false) {
+function expedition(depth=recommendedDepth(profile),kind,reroll=false){
+  return loadScene('Подготовка контракта',()=>setupExpedition(depth,kind,reroll));
+}
+function setupExpedition(depth,kind,reroll) {
   // Explicit next-stage depth can never fall below the character's recorded strength.
   depth = reroll?depth:Math.max(depth, recommendedDepth(profile));
   mode = 'expedition'; world = generateLevel(depth,undefined,kind); resetCombat();
@@ -152,6 +162,7 @@ function expedition(depth = recommendedDepth(profile),kind,reroll=false) {
   toast(`${world.name} · Угроза ${depth} · Целей: ${world.enemies.length}. W/S — лестницы · Пробел — прыжок.`);
 }
 function showModal(title, description, content = '', actions = '', wide = false) {
+  lastInteraction=null;
   keys.clear(); player.vx = 0; player.blocking = false;
   $('interaction').classList.add('hidden');
   $('overlay').classList.toggle('character-overlay', ['inventory', 'skills', 'merchant'].includes(modal));
@@ -160,7 +171,11 @@ function showModal(title, description, content = '', actions = '', wide = false)
   $('overlay').innerHTML = `<section class="modal${wide ? ' wide' : ''}" role="dialog" aria-modal="true" aria-label="${escape(title)}">${terminal() ? '' : '<button class="modal-close" data-action="close" aria-label="Закрыть окно">×</button>'}<div class="eyebrow">NEON / ${mode === 'hub' ? 'УБЕЖИЩЕ H10' : 'КОНТРАКТ'}</div><h2>${title}</h2>${description ? `<p>${description}</p>` : ''}${content}<div class="modal-buttons">${actions}</div></section>`;
   $('overlay').classList.remove('hidden'); $('overlay').querySelector('button:not(:disabled)')?.focus();
 }
-function closeModal() { modal = null; $('overlay').classList.add('hidden'); $('overlay').classList.remove('character-overlay', 'skills-overlay', 'merchant-overlay'); keys.clear(); canvas.focus({ preventScroll: true }); }
+function closeModal() {
+  modal=null;$('overlay').classList.add('hidden');$('overlay').classList.remove('character-overlay','skills-overlay','merchant-overlay');
+  keys.clear();canvas.focus({preventScroll:true});
+  if(!loadingScene&&equipmentSignature()!==preparedEquipment)loadScene('Подготовка снаряжения',()=>{});
+}
 function cheatNotice(message) {
   const notice=$('cheat-notice');notice.textContent=message;notice.hidden=false;
   clearTimeout(cheatNoticeTimer);cheatNoticeTimer=setTimeout(()=>{notice.hidden=true;},3500);
@@ -326,6 +341,7 @@ $('fullscreen-button').onclick = async () => {
 $('hub-button').onclick = () => { if (mode !== 'hub' && !modal) { modal = 'return'; showModal('Прервать контракт?', 'Добыча останется у тебя. Бонус за зачистку не будет начислен.', '', button('Эвакуироваться', 'hub') + button('Остаться', 'close', true)); } };
 
 function press(key) {
+  if(loadingScene)return;
   if(key==='tab'){if(!modal)inventory();return;}
   if (key === 'escape') { if (terminal()) return; if (modal) closeModal(); else pause(); return; }
   if ((key === 'b' || key === 'i') && modal === 'inventory') { closeModal(); return; }
@@ -340,6 +356,7 @@ function press(key) {
 }
 const physicalKeys = { Tab:'tab', Digit1:'1', Digit2:'2', Digit3:'3', Digit4:'4', Numpad1:'1', Numpad2:'2', Numpad3:'3', Numpad4:'4', KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyJ: 'j', KeyK: 'k', KeyR: 'r', KeyE: 'e', KeyQ: 'q', KeyB: 'b', KeyI: 'i', KeyP: 'p', ShiftLeft: 'shift', ShiftRight: 'shift', Space: ' ', Escape: 'escape', ArrowLeft: 'a', ArrowRight: 'd', ArrowUp: 'w', ArrowDown: 's' };
 window.addEventListener('keydown', event => {
+  if(loadingScene)return;
   if(event.ctrlKey&&event.altKey&&!event.metaKey&&!event.shiftKey){
     const code={Digit1:'godmode',Digit2:'oneshot',Digit3:'speed',Digit4:'ammo',Digit5:'jump',Digit6:'reroll',Numpad1:'godmode',Numpad2:'oneshot',Numpad3:'speed',Numpad4:'ammo',Numpad5:'jump',Numpad6:'reroll'}[event.code];
     if(event.code==='KeyC'||code){
@@ -390,18 +407,19 @@ function horizontalCameraTarget(dt=0) {
   return Math.max(0,Math.min(Math.max(0,world.width-width),cx-width*.5+cameraLook));
 }
 function aim(event) { const bounds = canvas.getBoundingClientRect(); mouse.x = (event.clientX - bounds.left) * canvas.width / bounds.width; mouse.y = (event.clientY - bounds.top) * canvas.height / bounds.height; mouse.active = true; if (player.dodge <= 0) player.facing = mouse.x + camera >= center(player).x ? 1 : -1; updateAim(); }
-canvas.addEventListener('pointermove', event => { if (event.pointerType !== 'touch' && !modal) aim(event); });
+canvas.addEventListener('pointermove', event => { if (!loadingScene&&event.pointerType !== 'touch' && !modal) aim(event); });
 canvas.addEventListener('pointerleave', () => { mouse.active = false; });
 canvas.addEventListener('pointerdown', event => {
-  if (modal || event.pointerType === 'touch') return;
+  if (loadingScene||modal || event.pointerType === 'touch') return;
   event.preventDefault(); aim(event); canvas.focus({ preventScroll: true });
   if (event.button === 0) press('j'); if (event.button === 2) press('k');
 });
 window.addEventListener('pointerup', event => { if (event.button === 0) keys.delete('j'); if (event.button === 2) keys.delete('k'); });
 canvas.addEventListener('contextmenu', event => event.preventDefault());
-window.addEventListener('blur', () => { keys.clear(); if (!modal) pause(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden && !modal) pause(); });
+window.addEventListener('blur', () => { keys.clear(); if (!modal&&!loadingScene) pause(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && !modal&&!loadingScene) pause(); });
 document.addEventListener('keydown', event => {
+  if(loadingScene)return;
   if (!modal || event.key !== 'Tab') return;
   const buttons = [...$('overlay').querySelectorAll('button:not(:disabled)')], first = buttons[0], end = buttons.at(-1);
   if (event.shiftKey && document.activeElement === first) { event.preventDefault(); end?.focus(); }
@@ -559,22 +577,66 @@ function findTarget() {
   const stairwell=findStairwell(player,world);
   if(stairwell)candidates.unshift({kind:'stairwell',x:stairwell.start.x,y:stairwell.start.y-player.h/2,label:stairwell.up?'Внутренняя лестница · На второй этаж':'Внутренняя лестница · На первый этаж',object:stairwell});
   target = candidates.filter(t => Math.abs(t.x - center(player).x) < 77 && Math.abs(t.y - center(player).y) < 65).sort((a, b) => Math.abs(a.x - player.x) - Math.abs(b.x - player.x))[0];
-  $('interaction').classList.toggle('hidden', !target); if (target) $('interaction').innerHTML = `<kbd>E</kbd> ${target.label}`;
+  const label=target?.label||'';
+  if(label!==lastInteraction){lastInteraction=label;$('interaction').classList.toggle('hidden',!target);if(target)$('interaction').innerHTML=`<kbd>E</kbd> ${label}`;}
 }
 function render() {
   updateReloadIndicator();
   drawWorld(ctx, canvas, { mode, world, player, profile, camera,cameraY, time, particles, floats, bullets, shake, mouse });
   navigation.hidden = mode === 'hub' || !world.kind;
-  if (!navigation.hidden) drawMinimap(minimapCtx, minimap, world, player);
+  if (!navigation.hidden&&time>=nextMinimap){drawMinimap(minimapCtx,minimap,world,player);nextMinimap=time+.1;}
 }
-function resize() { const bounds = canvas.parentElement.getBoundingClientRect(); canvas.width = Math.round(660 * bounds.width / bounds.height); canvas.height = 660; camera = horizontalCameraTarget(); }
+function resize() {
+  const bounds=canvas.parentElement.getBoundingClientRect(),width=Math.max(320,Math.round(660*bounds.width/Math.max(1,bounds.height)));
+  if(canvas.width!==width||canvas.height!==660){canvas.width=width;canvas.height=660;nextMinimap=0;}
+  camera=horizontalCameraTarget();
+}
 function frame(now) {
+  if(loadingScene){last=now;accumulator=0;requestAnimationFrame(frame);return;}
   const elapsed = Math.min((now - last) / 1000 || 0, .05); last = now;
   if (!modal) { time += elapsed; accumulator += elapsed; while (accumulator >= 1 / 120) { update(1 / 120); accumulator -= 1 / 120; if (modal) { accumulator = 0; break; } } } else accumulator = 0;
   render(); requestAnimationFrame(frame);
   previewTime += ['inventory','merchant'].includes(modal) ? elapsed : 0;
-  paintPreviews(profile.equipment, ['inventory','merchant'].includes(modal) ? previewTime : time);
+  if(['inventory','merchant'].includes(modal))paintPreviews(profile.equipment,previewTime);
 }
-Promise.all([preloadSprites(), preloadEnvironment()]).catch(error => console.warn('Art assets unavailable; fallback is active.', error));
-hub(); resize(); new ResizeObserver(resize).observe(canvas.parentElement); requestAnimationFrame(frame);
-toast('1–4 — выбрать оружие · ЛКМ — атака · ПКМ — блок · Shift — перекат · Tab — персонаж.');
+async function prepareScene(){
+  const surface=document.createElement('canvas');surface.width=canvas.width;surface.height=canvas.height;
+  const context=surface.getContext('2d'),positions=[];
+  // Visit the whole new scene while hidden to prepare parallax, road and local props.
+  const end=Math.max(0,world.width-canvas.width),xs=[];
+  for(let x=0;x<end;x+=canvas.width*.8)xs.push(x);xs.push(end);
+  const ys=[0];for(let y=-canvas.height*.8;y>(world.top||0);y-=canvas.height*.8)ys.push(y);
+  if(world.top<0)ys.push(world.top);
+  for(const y of ys)for(const x of xs)positions.push({x,y});
+  for(const [i,{x,y}]of positions.entries()){
+    drawWorld(context,surface,{mode,world,player,profile,camera:x,cameraY:y,time,particles:[],floats:[],bullets:[],shake:0,mouse});
+    loadingProgress(.85+.15*(i+1)/positions.length,'Подготовка локации…');await nextPaint();
+  }
+}
+async function loadScene(title,setup){
+  if(loadingScene)return;
+  loadingScene=true;keys.clear();showLoading(title);
+  try{
+    await nextPaint();setup();lastInteraction=null;nextMinimap=0;
+    if(equipmentSignature()!==preparedEquipment){
+      await prepareSprites(profile.equipment,p=>loadingProgress(p*.85,'Подготовка снаряжения…'));preparedEquipment=equipmentSignature();
+    }
+    await prepareScene();render();hideLoading();loadingScene=false;canvas.focus({preventScroll:true});
+  }catch(error){loadingError(error);}
+}
+async function boot(){
+  showLoading();await nextPaint();
+  try{
+    let loaded=0;const total=Object.keys(SPRITES).length+1+Object.keys(ENVIRONMENT_ASSETS).length;
+    const progress=()=>loadingProgress(++loaded/total*.45,`Загрузка ресурсов · ${loaded} / ${total}`);
+    await Promise.all([preloadSprites(progress),preloadEnvironment(progress)]);
+    await prepareSprites(profile.equipment,p=>loadingProgress(.45+p*.15,'Подготовка персонажа…'));
+    preparedEquipment=equipmentSignature();
+    await prepareEnvironment(p=>loadingProgress(.60+p*.25,'Подготовка освещения и окружения…'));
+    setupHub();resize();new ResizeObserver(resize).observe(canvas.parentElement);
+    await prepareScene();render();hideLoading();loadingScene=false;last=performance.now();
+    canvas.focus({preventScroll:true});requestAnimationFrame(frame);
+    toast('1–4 — выбрать оружие · ЛКМ — атака · ПКМ — блок · Shift — перекат · Tab — персонаж.');
+  }catch(error){loadingError(error);}
+}
+boot();

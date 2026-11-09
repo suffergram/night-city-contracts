@@ -26,7 +26,9 @@ let preloadPromise;
 function loadSheet(key, url) {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.onload = () => {
+    image.onload = async () => {
+      try{
+      await image.decode?.();
       if(key==='aimRunContact'){
         // Pack the standalone corrected pose into its own slot; no body parts are combined.
         const cell=209,atlas=document.createElement('canvas');atlas.width=atlas.height=cell*6;
@@ -35,13 +37,22 @@ function loadSheet(key, url) {
         sheets.set(key,{image:atlas,width:atlas.width,height:atlas.height});
       }else sheets.set(key, { image, width: image.naturalWidth, height: image.naturalHeight });
       resolve();
+      }catch(error){reject(error);}
     };
     image.onerror = () => reject(new Error(`Cannot load ${url}`)); image.src = url;
   });
 }
-export function preloadSprites() {
+export function preloadSprites(onProgress=()=>{}) {
   if (typeof Image === 'undefined') return Promise.resolve();
-  return preloadPromise ||= Promise.all(Object.entries({ ...SPRITES, weaponArt: WEAPON_ART }).map(([key, url]) => loadSheet(key, url)));
+  return preloadPromise ||= Promise.all(Object.entries({ ...SPRITES, weaponArt: WEAPON_ART }).map(([key, url]) => loadSheet(key, url).then(()=>onProgress(key))));
+}
+export async function prepareSprites(equipment,onProgress=()=>{}){
+  const names=Object.keys(SPRITES).filter(name=>name!=='enemies');
+  for(const [i,name]of names.entries()){
+    heroMaterial(equipment,name);
+    onProgress((i+1)/names.length);await new Promise(resolve=>setTimeout(resolve,0));
+  }
+  for(const slot of ['gun','rifle','shotgun'])weaponPart(slot);
 }
 export function spriteDiagnostics() {
   return Object.fromEntries(Object.entries({ ...SPRITES, weaponArt: WEAPON_ART }).map(([key, url]) => [key, { url, loaded: sheets.has(key), width: sheets.get(key)?.width || 0, height: sheets.get(key)?.height || 0 }]));
@@ -111,7 +122,7 @@ function heroMaterial(equipment, sheetName = 'hero') {
   const {ids,median}=sourceMaterialMask(sheetName,data,surface.width,surface.height);
   for (let y = 0; y < surface.height; y++) for (let x = 0; x < surface.width; x++) {
     const i = (y * surface.width + x) * 4; if (data[i + 3] < 30) continue;
-    const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
+    const r=data[i],g=data[i+1],b=data[i+2];
     const material=ids[y*surface.width+x];
     if (material===1) {
       const frame = Math.floor(y / cellH) * 6 + Math.floor(x / cellW);

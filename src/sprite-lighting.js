@@ -87,7 +87,11 @@ function splitEmission(source,lights){
     r.pixels.data.set(all.data.subarray(n,n+4),to);all.data[n+3]=0;
   }
   const steady=document.createElement('canvas');steady.width=w;steady.height=h;steady.getContext('2d').putImageData(all,0,0);
-  for(const r of regions)r.ctx.putImageData(r.pixels,0,0);
+  for(const r of regions){
+    r.ctx.putImageData(r.pixels,0,0);
+    // Drawing uses the canvas only; don't retain a second RGBA copy per light.
+    delete r.pixels;delete r.ctx;
+  }
   return {steady,regions};
 }
 
