@@ -3,6 +3,7 @@
 <title>Окружение — Night City Contracts</title>
 <style>body{margin:0;background:#10121e;color:#f0bdce;font:14px system-ui;padding:16px}header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px}button,select,input[type=number]{background:#291c2c;color:#f0bdce;border:1px solid #805267;padding:7px}input{accent-color:#f477a1}input[type=number]{width:110px}canvas{display:block;width:min(100%,1400px);height:auto;border:1px solid #4e3445}p{color:#b4afbd}</style>
 <header><button id="pause">Пауза</button><label>Сцена <select id="scene"><option value="hub">Хаб</option></select></label><label>Seed <input id="seed" type="number" value="42" min="0" max="4294967295" step="1"></label><button id="same">Показать seed</button><button id="new">Новая планировка</button><label>Камера X <input id="camera" type="range" min="0" max="200" value="0" step="1"></label><label>Этаж <input id="vertical" type="range" min="0" max="0" value="0" step="1"></label><label>Задник рынка <select id="backdrop"><option value="auto">По seed</option><option value="district">Район</option><option value="metropolis">Мегаполис</option></select></label></header>
+<p><label>Свет объектов <select id="lighting"><option value="auto">Анимация</option><option value="off">Всё выключено</option><option value="on">Всё включено</option></select></label></p>
 <canvas id="preview" width="1200" height="660"></canvas>
 <p id="summary"></p><p>Перемещай камеру по горизонтали и этажам. Пауза останавливает свет и частицы. Персонажи показаны для сравнения масштаба.</p>
 <script type="module">
@@ -10,6 +11,7 @@ import {preloadEnvironment,drawRasterBackdrop,drawRasterEnvironment} from '../sr
 import {preloadSprites,drawRasterActor} from '../src/raster.js';
 import {GROUND,DEFAULT_PROFILE,generateLevel,freshLevelSeed} from '../src/world.js';
 import {LEVEL_KINDS} from '../src/level-layout.js';
+import {setLightingMode} from '../src/ambient.js';
 const canvas=document.getElementById('preview'),ctx=canvas.getContext('2d');
 const hubWorld={width:1400,platforms:[],chests:[],portal:{x:1150,y:GROUND}};
 const sceneSelect=document.getElementById('scene'),horizontal=document.getElementById('camera'),vertical=document.getElementById('vertical'),seedInput=document.getElementById('seed'),backdropSelect=document.getElementById('backdrop');
@@ -47,6 +49,7 @@ document.getElementById('pause').onclick=()=>{playing=!playing;document.getEleme
 sceneSelect.onchange=()=>regenerate();
 document.getElementById('same').onclick=()=>regenerate();document.getElementById('new').onclick=()=>regenerate(freshLevelSeed());
 horizontal.oninput=vertical.oninput=draw;backdropSelect.onchange=applyBackdrop;
+document.getElementById('lighting').onchange=event=>{setLightingMode(event.target.value);draw();};
 window.environmentPreview={setTime(t){playing=false;time=t;document.getElementById('pause').textContent='Продолжить';draw();},setCamera(x,y=0){horizontal.value=x;vertical.value=y;draw();},setScene(value){sceneSelect.value=value==='sector'?'industrial':value;if(!sceneSelect.value)sceneSelect.value='hub';return regenerate();},generate(seed,kind=sceneSelect.value){sceneSelect.value=kind==='sector'?'industrial':kind;if(!sceneSelect.value)sceneSelect.value='hub';return regenerate(seed);},getWorld(){return world;}};
 regenerate();
 window.environmentPreviewReady=true;

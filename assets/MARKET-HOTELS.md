@@ -1,5 +1,13 @@
 # Market hotels
 
+`src/hotel-atmosphere.js` registers per-facade sign, corridor and window emitter
+regions. Neon uses soft shimmer, strong shimmer or full on/off blinking with
+independent phases. Window lights occasionally dim with soft fades; entry lamps
+light drifting dust and roof ventilation releases intermittent visible steam.
+Off-state facades now provide the base, with separate additive light layers;
+see `UNLIT-ENVIRONMENT.md`. No dark masks are painted over a lit building.
+All effects use game time and follow the same facade scale and foundation offset.
+
 Half of each facade's foundation plinth is sunk below ground and clipped by the
 street edge. Balcony/roof platforms and upper exits move down with the facade;
 ground entrances stay at street level. Scaling and proportions are unchanged.

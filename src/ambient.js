@@ -1,10 +1,16 @@
 const stamps=new Map();
+let lightingMode='auto';
+export function setLightingMode(mode){if(['auto','off','on'].includes(mode))lightingMode=mode;}
+export const controlledLight=level=>lightingMode==='off'?0:lightingMode==='on'?1:level;
 const noise=n=>{const value=Math.sin(n*127.1+311.7)*43758.5453;return value-Math.floor(value);};
 
 // Absolute game time keeps lights and motes stable across camera movement, pauses and frame rates.
 export function lightLevel(time,seed,unstable=false) {
+  if(lightingMode!=='auto')return controlledLight(1);
   const phase=noise(seed)*31;
   const shimmer=.86+.075*Math.sin(time*2.3+phase)+.035*Math.sin(time*11.7+phase*2);
+  if(unstable==='blink')return ((time+phase)%(2.1+noise(seed+4)*1.9))<(1.1+noise(seed+4)*.8)? .98:0;
+  if(unstable==='strong')return Math.max(.08,Math.min(1,.56+.29*Math.sin(time*3.1+phase)+.15*Math.sin(time*13.7+phase*2)));
   const cycle=((time+phase)%11+11)%11;
   return unstable&&(cycle<.13||cycle>.25&&cycle<.34||cycle>.49&&cycle<.55)?shimmer*.06:shimmer;
 }
@@ -16,6 +22,7 @@ function stamp(colour) {
   x.fillStyle=g;x.fillRect(0,0,96,96);stamps.set(colour,c);return c;
 }
 export function ambientGlow(ctx,x,y,radius,colour,alpha) {
+  if(lightingMode==='off')return;
   ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha*=alpha;
   ctx.drawImage(stamp(colour),x-radius,y-radius,radius*2,radius*2);ctx.restore();
 }
@@ -41,11 +48,15 @@ export function drawLampAtmosphere(ctx,x,y,height,time,seed,level) {
   }
 }
 export function drawVentSteam(ctx,x,y,size,time,seed) {
-  for(let i=0;i<4;i++){
-    const phase=((time*.13+i/4+noise(seed))%1+1)%1;
-    const drift=Math.sin(phase*4+seed)*size*.15;
-    ambientGlow(ctx,x+drift+phase*size*.3,y-phase*size,size*(.15+phase*.4),'#9aa6b5',Math.sin(phase*Math.PI)*.075);
+  const texture=stamp('#d3dce2'),alpha=ctx.globalAlpha;
+  ctx.save();ctx.globalCompositeOperation='source-over';
+  for(let i=0;i<10;i++){
+    const phase=((time*.19+i/10+noise(seed))%1+1)%1,radius=size*(.09+phase*.25);
+    const drift=Math.sin(phase*6+seed+i*.15)*size*.09+phase*size*.23;
+    ctx.globalAlpha=alpha*.32*Math.sin(phase*Math.PI);
+    ctx.drawImage(texture,x+drift-radius*.8,y-phase*size*1.2-radius,radius*1.6,radius*2.1);
   }
+  ctx.restore();
 }
 
 const wrap=(value,span)=>((value%span)+span)%span;
@@ -79,6 +90,7 @@ export function drawCityTraffic(ctx,time,camera,width,metropolis){
   }
 }
 export function drawHologram(ctx,x,y,w,h,time,seed,colour='#58dfe5'){
+  if(lightingMode==='off')return;
   const phase=wrap(time*.22+noise(seed),1);
   ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();ctx.globalCompositeOperation='screen';
   ctx.globalAlpha*=.08+.04*Math.sin(time*1.3+seed);ctx.fillStyle=colour;ctx.fillRect(x,y,w,h);
@@ -97,7 +109,9 @@ export function screenEmission(r,g,b){
 }
 const screenMasks=new Map();
 export function drawScreenAnimation(ctx,source,rect,x,y,w,h,time,seed,key){
+  if(lightingMode==='off')return;
   if(!source)return;
+  source=source.litSource||source;
   const cacheKey=key+':'+rect.join(',');
   if(!screenMasks.has(cacheKey)){
     const mask=document.createElement('canvas');mask.width=Math.max(1,Math.round(source.w*rect[2]));mask.height=Math.max(1,Math.round(source.h*rect[3]));
@@ -115,19 +129,19 @@ export function drawScreenAnimation(ctx,source,rect,x,y,w,h,time,seed,key){
 }
 export function drawCookingSteam(ctx,x,y,size,time,seed){
   const texture=stamp('#d6ddd8');
-  ctx.save();
-  for(let i=0;i<9;i++){
-    const phase=wrap(time*.3+i/9+noise(seed),1),radius=size*(.10+phase*.22);
+  const alpha=ctx.globalAlpha;ctx.save();ctx.globalCompositeOperation='source-over';
+  for(let i=0;i<12;i++){
+    const phase=wrap(time*.25+i/12+noise(seed),1),radius=size*(.09+phase*.25);
     const drift=Math.sin(phase*7+seed+i*.2)*size*.07+phase*size*.08;
-    ctx.globalAlpha=.26*Math.sin(phase*Math.PI);
-    ctx.drawImage(texture,x+drift-radius*.65,y-phase*size-radius,radius*1.3,radius*2);
+    ctx.globalAlpha=alpha*.42*Math.sin(phase*Math.PI);
+    ctx.drawImage(texture,x+drift-radius*.7,y-phase*size*1.2-radius,radius*1.4,radius*2);
   }
   ctx.restore();
 }
 export function drawStallLights(ctx,x,y,width,time,seed){
   ctx.save();ctx.strokeStyle='#302a21';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,y);ctx.quadraticCurveTo(x+width/2,y+5,x+width,y);ctx.stroke();
   for(let i=0;i<5;i++){
-    const xx=x+width*(i+.5)/5,yy=y+Math.sin((i+.5)/5*Math.PI)*2,level=lightLevel(time,seed+i*13);
+    const xx=x+width*(i+.5)/5,yy=y+Math.sin((i+.5)/5*Math.PI)*2,level=lightLevel(time,seed+i*13,i===1?'blink':i===3?'strong':false);
     ctx.fillStyle='#563924';ctx.fillRect(xx-1.5,yy-2,3,3);
     ctx.fillStyle='#ffdc9b';ctx.globalAlpha=level;ctx.fillRect(xx-1,yy,2,3);
     ambientGlow(ctx,xx,yy+1,13,'#ffb66c',.48*level);
@@ -170,7 +184,7 @@ export function drawSceneDust(ctx,camera,width,time,world,ground){
   ctx.restore();
 }
 export function drawWarningBeacon(ctx,x,y,time,seed){
-  const pulse=.2+.8*Math.max(0,Math.cos(time*2.1+seed))**8;
+  const pulse=controlledLight(.2+.8*Math.max(0,Math.cos(time*2.1+seed))**8);
   ctx.save();ctx.fillStyle='#a75c2b';ctx.fillRect(x-3,y-2,6,4);
   ctx.fillStyle='#ffd38a';ctx.globalAlpha*=pulse;ctx.fillRect(x-2,y-2,4,2);
   ambientGlow(ctx,x,y,16,'#ffb75d',pulse*.25);ctx.restore();

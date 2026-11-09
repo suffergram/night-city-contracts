@@ -4,7 +4,10 @@ import {createDressing,DETAIL_SPRITES} from './dressing.js';
 import {fitScenery,sceneryContactInset} from './scenery-sizes.js';
 import {marketCell,marketStyle,isMarketStall} from './market-stalls.js';
 import {MARKET_HOTELS} from './market-hotels.js';
-import {lightLevel,ambientGlow,drawLampAtmosphere,drawVentSteam,drawCityTraffic,drawHologram,drawScreenAnimation,drawCookingSteam,drawStallLights,drawHarbourHaze,drawElectricalFault,drawSceneDust,drawWarningBeacon} from './ambient.js';
+import {HOTEL_ATMOSPHERE} from './hotel-atmosphere.js';
+import {withUnlitBase,drawSpriteEmission} from './sprite-lighting.js';
+import {OBJECT_LIGHTS} from './object-lights.js';
+import {lightLevel,controlledLight,ambientGlow,drawLampAtmosphere,drawVentSteam,drawCityTraffic,drawHologram,drawScreenAnimation,drawCookingSteam,drawStallLights,drawHarbourHaze,drawElectricalFault,drawSceneDust,drawWarningBeacon} from './ambient.js';
 
 export const ENVIRONMENT_ASSETS = {
   farCity: new URL('../assets/environment/skyline-dry-v2.png', import.meta.url).href,
@@ -22,6 +25,14 @@ export const ENVIRONMENT_ASSETS = {
   hotelHourly:new URL('../assets/environment/market-hotel-hourly-v2.png',import.meta.url).href,
   hotelLove:new URL('../assets/environment/market-hotel-love-v2.png',import.meta.url).href,
   hotelBusiness:new URL('../assets/environment/market-hotel-business-v2.png',import.meta.url).href,
+  hotelHourlyOff:new URL('../assets/environment/hotel-hourly-unlit-v1.png',import.meta.url).href,
+  hotelLoveOff:new URL('../assets/environment/hotel-love-unlit-v1.png',import.meta.url).href,
+  hotelBusinessOff:new URL('../assets/environment/hotel-business-unlit-v1.png',import.meta.url).href,
+  propsOff:new URL('../assets/environment/props-unlit-v1.png',import.meta.url).href,
+  locationsOff:new URL('../assets/environment/locations-unlit-v1.png',import.meta.url).href,
+  marketOff:new URL('../assets/environment/market-unlit-v1.png',import.meta.url).href,
+  lifeOff:new URL('../assets/environment/life-unlit-v1.png',import.meta.url).href,
+  worksiteOff:new URL('../assets/environment/worksite-unlit-v1.png',import.meta.url).href,
 };
 export const PARALLAX_LAYERS = [
   { asset: 'farCity', speed: .06, height: GROUND + 180, bottom: GROUND + 8, alpha: 1, filter: 'brightness(.75) saturate(.75)' },
@@ -53,11 +64,11 @@ export function parallaxTiles(camera, viewportWidth, tileWidth, speed) {
 const images = new Map(); let loading;
 const slices = new Map();
 const layerSurfaces = new Map();
-const roadSurfaces=new Map(),emissionMasks=new Map();
+const roadSurfaces=new Map();
 const PROP_LIGHTS={
   0:[{rect:[.38,.63,.22,.07],colour:'#ffc46f'}],
-  1:[{rect:[.15,.24,.73,.14],colour:'#ff426f',unstable:true},{rect:[.055,.56,.07,.2],colour:'#4fe6ec'}],
-  2:[{rect:[.13,.25,.8,.25],colour:'#42e5ed'},{rect:[.53,.51,.28,.06],colour:'#fc4eab',unstable:true}],
+  1:[{rect:[.15,.24,.73,.14],colour:'#ff426f',mode:'strong'},{rect:[.055,.56,.07,.2],colour:'#4fe6ec'}],
+  2:[{rect:[.13,.25,.8,.25],colour:'#42e5ed'},{rect:[.53,.51,.28,.06],colour:'#fc4eab',mode:'blink'}],
   3:[{rect:[.27,.05,.53,.25],colour:'#48ece1'}],
   4:[{rect:[.39,.27,.23,.07],colour:'#4ce9e1'}],
   6:[{rect:[.43,.35,.15,.25],colour:'#ffc25d'}],
@@ -75,7 +86,7 @@ const CITY_SCREENS={
 export function preloadEnvironment() {
   if (typeof Image === 'undefined') return Promise.resolve();
   return loading ||= Promise.all(Object.entries(ENVIRONMENT_ASSETS).map(([id, url]) => new Promise((resolve, reject) => {
-    const image = new Image(); image.onload = () => { images.set(id, image); resolve(); }; image.onerror = () => reject(new Error(`Cannot load ${url}`)); image.src = url;
+    const image = new Image(); image.onload = () => { images.set(id, image);if(id.endsWith('Off')){slices.clear();detailMaterials.clear();locationVariants.clear();}resolve(); }; image.onerror = () => reject(new Error(`Cannot load ${url}`)); image.src = url;
   })));
 }
 export function environmentDiagnostics() { return Object.fromEntries(Object.keys(ENVIRONMENT_ASSETS).map(id => [id, images.has(id)])); }
@@ -94,7 +105,7 @@ function prop(index,atlas='props') {
   let left = w, top = h, right = 0, bottom = 0;
   const threshold=atlas==='life'||atlas==='worksite'?160:75;
   for (let yy = 2; yy < h - 2; yy++) for (let xx = 2; xx < w - 2; xx++) if (pixels[(yy * w + xx) * 4 + 3] > threshold) { left = Math.min(left, xx); top = Math.min(top, yy); right = Math.max(right, xx); bottom = Math.max(bottom, yy); }
-  const result = { image, x: x + left, y: y + top, w: Math.max(1, right - left + 1), h: Math.max(1, bottom - top + 1),contactInset:sceneryContactInset(pixels,w,h,{left,top,right,bottom}) };
+  const result = withUnlitBase({ image, x: x + left, y: y + top, w: Math.max(1, right - left + 1), h: Math.max(1, bottom - top + 1),contactInset:sceneryContactInset(pixels,w,h,{left,top,right,bottom}) },images.get(atlas+'Off'),cell,threshold);
   slices.set(key, result); return result;
 }
 function drawProp(ctx, index, x, feet, width, height,time=0) {
@@ -104,8 +115,10 @@ function drawProp(ctx, index, x, feet, width, height,time=0) {
   feet+=1+p.contactInset*height/p.h;
   ctx.drawImage(p.image, p.x, p.y, p.w, p.h, x, feet - height, width, height);
   drawLights(ctx,p,PROP_LIGHTS[index]||[],x,feet-height,width,height,time,index*137+Math.floor(x*3),'prop:'+index);
-  for(const light of PROP_LIGHTS[index]||[])if(!light.lamp&&light.rect[2]>.15){
+  for(const [i,light]of (PROP_LIGHTS[index]||[]).entries())if(!light.lamp&&light.rect[2]>.15){
+    ctx.save();ctx.globalAlpha*=lightLevel(time,index*137+Math.floor(x*3)+i*23,light.mode??light.unstable);
     const [lx,ly,lw,lh]=light.rect;drawScreenAnimation(ctx,p,light.rect,x+lx*width,feet-height+ly*height,lw*width,lh*height,time,x+index,'props:'+index);
+    ctx.restore();
   }
   if(index===9)drawVentSteam(ctx,x+width*.52,feet-height*.98,height*.6,time,x);
   return true;
@@ -116,24 +129,11 @@ function drawScaledProp(ctx, index, center, feet, height,time=0) {
   drawProp(ctx, index, center - width / 2, feet, width, height,time);
 }
 function drawLights(ctx,source,lights,x,y,width,height,time,seed,key) {
+  drawSpriteEmission(ctx,source,lights,x,y,width,height,time,seed);
   lights.forEach((light,i)=>{
-    const level=lightLevel(time,seed+i*23,light.unstable),[lx,ly,lw,lh]=light.rect;
-    const maskKey=key+':'+i;
-    if(!emissionMasks.has(maskKey)){
-      const c=document.createElement('canvas');c.width=source.w;c.height=source.h;
-      const m=c.getContext('2d');m.drawImage(source.image,source.x,source.y,source.w,source.h,0,0,c.width,c.height);
-      const pixels=m.getImageData(0,0,c.width,c.height),d=pixels.data;
-      for(let yy=0;yy<c.height;yy++)for(let xx=0;xx<c.width;xx++){
-        const n=(yy*c.width+xx)*4,max=Math.max(d[n],d[n+1],d[n+2]),min=Math.min(d[n],d[n+1],d[n+2]);
-        const inside=xx>=lx*c.width&&xx<(lx+lw)*c.width&&yy>=ly*c.height&&yy<(ly+lh)*c.height;
-        const emissive=Math.max(0,Math.min(1,(max-70)/110))*Math.max(Math.min(1,(max-min)/40),Math.max(0,(min-130)/100));
-        d[n+3]=inside?d[n+3]*emissive*.94:0;d[n]=12;d[n+1]=16;d[n+2]=24;
-      }
-      m.putImageData(pixels,0,0);emissionMasks.set(maskKey,c);
-    }
-    ctx.save();ctx.globalAlpha*=1-level;ctx.drawImage(emissionMasks.get(maskKey),x,y,width,height);ctx.restore();
+    const level=controlledLight(light.level??lightLevel(time,seed+i*23,light.mode??light.unstable)),[lx,ly,lw,lh]=light.rect;
     const cx=x+(lx+lw/2)*width,cy=y+(ly+lh/2)*height;
-    ambientGlow(ctx,cx,cy,Math.max(lw*width,lh*height)*1.4,light.colour,.32*level);
+    ambientGlow(ctx,cx,cy,Math.max(lw*width,lh*height)*1.4,light.colour,.32*level*(light.glow??1));
     if(light.lamp)drawLampAtmosphere(ctx,cx,cy,y+height-cy,time,seed+i,level);
   });
 }
@@ -294,15 +294,37 @@ function drawDetails(ctx,canvas,world,camera,time,kind=world.kind){
     if(!d.wall){
       ctx.fillStyle='#03080b50';ctx.beginPath();ctx.ellipse(d.x+d.w/2,d.floorY-.5,d.w*.42,1.5,0,0,Math.PI*2);ctx.fill();
     }
-    if(d.mirror){ctx.translate(d.x+d.w,y);ctx.scale(-1,1);ctx.drawImage(material,0,0,p.w,p.h,0,0,d.w,d.h);}
-    else ctx.drawImage(material,0,0,p.w,p.h,d.x,y,d.w,d.h);
+    const lights=OBJECT_LIGHTS[def.atlas]?.[def.frame]||[];
+    if(d.mirror){ctx.translate(d.x+d.w,y);ctx.scale(-1,1);ctx.drawImage(material,0,0,p.w,p.h,0,0,d.w,d.h);drawLights(ctx,p,lights,0,0,d.w,d.h,time,d.x,def.atlas+':'+def.frame);}
+    else{ctx.drawImage(material,0,0,p.w,p.h,d.x,y,d.w,d.h);drawLights(ctx,p,lights,d.x,y,d.w,d.h,time,d.x,def.atlas+':'+def.frame);}
     ctx.restore();
     if(['vending','directionSign','menuBoard','portNotice'].includes(d.sprite))ambientGlow(ctx,d.x+d.w*.5,d.y+d.h*.3,d.w*.42,'#6fd9d8',.12*lightLevel(time,d.x));
     if(d.sprite==='grill')drawCookingSteam(ctx,d.x+d.w*.45,d.y+8,30,time,d.x);
   }
 }
+function hotelLights(style,time,seed){
+  return HOTEL_ATMOSPHERE[style].lights.map((light,i)=>{
+    if(!light.window)return light;
+    const phase=((time+seed*.03+i*11)%45+45)%45;
+    const dark=Math.max(0,Math.min(1,(phase-29)/2,(39-phase)/2));
+    return {...light,level:(1-dark*.95)*(.90+.06*Math.sin(time*.3+i)),glow:.35};
+  });
+}
+function drawHotelAtmosphere(ctx,d,source,time){
+  const profile=HOTEL_ATMOSPHERE[d.style];if(!profile||!source)return;
+  const x=d.x,y=d.y+1+source.contactInset*d.h/source.h,seed=d.x*7+d.w*13;
+  drawLights(ctx,{...source,emission:null},hotelLights(d.style,time,seed),x,y,d.w,d.h,time,seed,'hotel:'+d.style);
+  for(const [i,[lx,ly,floor]]of profile.lamps.entries()){
+    drawLampAtmosphere(ctx,x+lx*d.w,y+ly*d.h,(floor-ly)*d.h,time,seed+i*31,lightLevel(time,seed+i));
+  }
+  for(const [i,[vx,vy]]of profile.vents.entries()){
+    const phase=((time+seed*.01+i*11)%26+26)%26;
+    const strength=Math.max(0,Math.min(1,phase/2,(20-phase)/3));
+    if(strength>0){ctx.save();ctx.globalAlpha*=strength;drawVentSteam(ctx,x+vx*d.w,y+vy*d.h,d.h*.23,time,seed+i*41);ctx.restore();}
+  }
+}
 const locationVariants=new Map();
-function drawLocationProp(ctx,index,x,y,w,h,variant=0,interior=false,atlas='locations'){
+function drawLocationProp(ctx,index,x,y,w,h,variant=0,interior=false,atlas='locations',time=0){
   const p=prop(index,atlas);if(!p)return;
   const fitted=fitScenery(p.w,p.h,x,y,w,h);x=fitted.x;y=fitted.y;w=fitted.w;h=fitted.h;
   y+=1+p.contactInset*h/p.h;
@@ -330,6 +352,9 @@ function drawLocationProp(ctx,index,x,y,w,h,variant=0,interior=false,atlas='loca
     }
     ctx.drawImage(locationVariants.get(key),x,y,w,h);
   }else ctx.drawImage(p.image,p.x,p.y,p.w,p.h,x,y,w,h);
+  const hotel=Object.keys(MARKET_HOTELS).find(style=>MARKET_HOTELS[style].asset===atlas),seed=x*7+w*13;
+  if(hotel)drawSpriteEmission(ctx,p,hotelLights(hotel,time,seed),x,y,w,h,time,seed);
+  else drawLights(ctx,p,OBJECT_LIGHTS[atlas]?.[index]||[],x,y,w,h,time,seed,atlas+':'+index);
 }
 function drawDeck(ctx,x,y,w,h){
   const p=prop(10,'locations');
@@ -341,16 +366,16 @@ function drawLocation(ctx,canvas,world,camera,time){
   if(world.kind!=='megablock')drawRoad(ctx,canvas,camera);
   else{ctx.fillStyle='#080c15';ctx.fillRect(camera,GROUND,canvas.width,canvas.height+Math.abs(world.top));}
   const visible=o=>o.x+o.w>camera-100&&o.x<camera+canvas.width+100;
-  for(const d of world.decor.filter(d=>d.kind==='crane'&&visible(d))){ctx.save();ctx.globalAlpha=.65;drawLocationProp(ctx,2,d.x,d.y-d.h,d.w,d.h);ctx.restore();}
+  for(const d of world.decor.filter(d=>d.kind==='crane'&&visible(d))){ctx.save();ctx.globalAlpha=.65;drawLocationProp(ctx,2,d.x,d.y-d.h,d.w,d.h,0,false,'locations',time);ctx.restore();}
   drawDetails(ctx,canvas,world,camera,time);
   for(const original of world.decor){
     let d=original;
     if(d.kind==='crane'||!visible(d))continue;
     if(d.kind==='marketHotel'){
       ctx.save();ctx.beginPath();ctx.rect(d.x-2,d.y-2,d.w+4,GROUND-d.y+3);ctx.clip();
-      drawLocationProp(ctx,0,d.x,d.y,d.w,d.h,0,false,MARKET_HOTELS[d.style].asset);
+      drawLocationProp(ctx,0,d.x,d.y,d.w,d.h,0,false,MARKET_HOTELS[d.style].asset,time);
       ctx.restore();
-      ambientGlow(ctx,d.x+d.w*.2,d.y+d.h*.42,40,'#e45b9d',.1*lightLevel(time,d.x,true));
+      drawHotelAtmosphere(ctx,d,prop(0,MARKET_HOTELS[d.style].asset),time);
       continue;
     }
     const under=['container','canopy'].includes(d.kind)||isMarketStall(d.kind);
@@ -359,7 +384,7 @@ function drawLocation(ctx,canvas,world,camera,time){
     const top=under?d.y:d.y-d.h,fitted=source?fitScenery(source.w,source.h,d.x,top,d.w,d.h):{x:d.x,y:top,w:d.w,h:d.h};
     d={...d,x:fitted.x,w:fitted.w,h:fitted.h};const y=fitted.y;
     if(d.kind==='produce'){ctx.save();ctx.filter='brightness(.78) saturate(.65)';}
-    drawLocationProp(ctx,frame,d.x,y,d.w,d.h,d.variant||0,world.kind==='megablock',atlas);
+    drawLocationProp(ctx,frame,d.x,y,d.w,d.h,d.variant||0,world.kind==='megablock',atlas,time);
     if(d.kind==='produce')ctx.restore();
     if(isMarketStall(d.kind)||['apartment','maintenance'].includes(d.kind)){
       const colour=d.kind==='foodStall'?'#ff9e51':d.kind==='apartment'?'#e956b4':'#42dce5';
@@ -382,8 +407,10 @@ function drawLocation(ctx,canvas,world,camera,time){
     if(d.kind==='techStall')drawScreenAnimation(ctx,source,[.42,.32,.39,.22],d.x+d.w*.42,y+d.h*.32,d.w*.39,d.h*.22,time,d.x,atlas+':'+frame);
     if(d.kind==='apartment'){
       ctx.fillStyle='#10272c';ctx.fillRect(d.x+d.w*.73,y+d.h*.44,d.w*.20,d.h*.15);
+      ctx.save();ctx.globalAlpha*=lightLevel(time,d.x);
       ctx.fillStyle='#71dadd';ctx.font='7px monospace';ctx.fillText(`${d.floor+1}-${Math.floor(d.x/10)%100}`,d.x+d.w*.74,y+d.h*.54);
       drawHologram(ctx,d.x+d.w*.73,y+d.h*.44,d.w*.20,d.h*.15,time,d.x);
+      ctx.restore();
     }
   }
   for(const p of world.platforms){
