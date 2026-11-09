@@ -1,4 +1,8 @@
 /* Red monochrome operating system panels, cyan data and yellow active controls. */
+.button,.weapon-slot{position:relative;--button-cut:6px}
+.weapon-slot{--button-cut:8px}
+/* Draw the missing diagonal inside the clip, inheriting the actual border colour. */
+.button::after,.weapon-slot::after{content:'';position:absolute;width:calc(var(--button-cut)*1.414214);height:0;right:calc(var(--button-cut)*-.207107 - .75px);bottom:calc(var(--button-cut)*.5 - 1.25px);border-top:1px solid;border-color:inherit;transform:rotate(-45deg);transform-origin:center;pointer-events:none}
 .raster-stage{position:relative;width:100%;aspect-ratio:2/3;isolation:isolate}.raster-stage canvas{width:100%;height:100%;position:absolute;inset:0;cursor:default;image-rendering:auto;filter:drop-shadow(0 6px 12px #0009)}.body-schematic .raster-stage .gear-callouts{position:absolute;inset:0;width:100%;height:100%;max-height:none;fill:none;stroke:#e489a9;stroke-width:1;opacity:.45;pointer-events:none;filter:none}.portrait canvas{width:100%;height:100%;position:absolute;inset:0;cursor:default}.body-schematic .raster-stage{max-height:440px}.body-schematic{min-width:200px;width:270px}.body-schematic small{position:relative;z-index:1}
 .modal-close{position:absolute;right:16px;top:14px;width:28px;height:28px;display:grid;place-items:center;background:#461b29;border:1px solid #9d4259;color:#ff8a96;font-size:21px;line-height:1;z-index:2}
 :root{--bg:#09090d;--panel:#180e14;--line:#663039;--text:#f4d8d5;--muted:#a8757e;--gold:#f8ee42;--cyan:#66edf0;--red:#ff5a62}
