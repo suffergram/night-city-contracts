@@ -12,11 +12,12 @@ export function buildingLighting(building,windowCount,lampCount,signCount){
   for(let i=order.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}
   const count=variant===0?windowCount:variant===1?Math.min(windowCount,1):variant===2?0:Math.min(Math.max(0,windowCount-1),2+Math.floor(random()*2));
   const windows=Array(windowCount).fill(false);for(let i=0;i<count;i++)windows[order[i]]=true;
-  const modes=['steady',false,'strong','blink','off'];
+  const modes=['steady',false,'strong','blink','off','fault-fast','fault-cycle'];
   const styleHash=Array.from(building.style||'building').reduce((hash,char)=>(hash*31+char.charCodeAt(0))>>>0,0);
   // Adjacent copies rotate modes too, so their corresponding lamps cannot match.
   const fixture=i=>modes[(styleHash+variant+i*3)%modes.length];
-  const result={seed,windows,lamps:Array.from({length:lampCount},(_,i)=>fixture(i)),signs:Array.from({length:signCount},(_,i)=>fixture(i+lampCount))};
+  const fixtures=Array.from({length:signCount},(_,i)=>fixture(i+lampCount));
+  const result={seed,windows,lamps:Array.from({length:lampCount},(_,i)=>fixture(i)),fixtures,signs:fixtures.map(mode=>mode==='fault-cycle'?'fault-fast':mode)};
   configurations.set(building,result);return result;
 }
 export function fixtureLight(time,seed,mode){

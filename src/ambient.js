@@ -8,6 +8,31 @@ const noise=n=>{const value=Math.sin(n*127.1+311.7)*43758.5453;return value-Math
 export function lightLevel(time,seed,unstable=false) {
   if(lightingMode!=='auto')return controlledLight(1);
   const phase=noise(seed)*31;
+  if(unstable==='fault-fast'||unstable==='fault-cycle'){
+    const clock=time+phase;
+    // Seeded short on/off runs: irregular, stable across frame rates and pauses.
+    const sputter=t=>noise(seed*3+Math.floor(t*19)+Math.floor(t*3)*71)>.43?.98:0;
+    if(unstable==='fault-fast'){
+      // Unequal seeded holds with abrupt brightness changes; never fully dark.
+      const block=Math.floor(clock/2.7),local=clock-block*2.7;
+      let end=0,previous=.25+noise(seed+block*137)*.65;
+      for(let i=0;i<48;i++){
+        const key=seed*7+block*173+i*31;
+        const duration=.035+Math.pow(noise(key+1),2)*.39;
+        end+=duration;
+        const value=noise(key+2)<.43?.10+noise(key+3)*.19:.68+noise(key+4)*.32;
+        if(local<end)return value;
+        previous=value;
+      }
+      return previous;
+    }
+    const period=23+noise(seed+8)*8,index=Math.floor(clock/period),local=clock-index*period;
+    const lit=5+noise(seed+index*17)*4,failing=2+noise(seed+index*31+1)*2;
+    const restart=1.2+noise(seed+index*47+2)*1.2;
+    if(local<lit)return .96;
+    if(local<lit+failing||local>period-restart)return sputter(clock);
+    return 0;
+  }
   const shimmer=.86+.075*Math.sin(time*2.3+phase)+.035*Math.sin(time*11.7+phase*2);
   if(unstable==='blink')return ((time+phase)%(2.1+noise(seed+4)*1.9))<(1.1+noise(seed+4)*.8)? .98:0;
   if(unstable==='strong')return Math.max(.08,Math.min(1,.56+.29*Math.sin(time*3.1+phase)+.15*Math.sin(time*13.7+phase*2)));

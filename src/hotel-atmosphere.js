@@ -4,7 +4,7 @@ const windows=rects=>rects.map(rect=>({rect,colour:'#ffc382',window:true}));
 export const HOTEL_ATMOSPHERE={
   hourly:{
     lights:[
-      {rect:[.002,.19,.052,.31],colour:'#4ce5e9',mode:'strong'},
+      {rect:[.002,.19,.052,.31],colour:'#4ce5e9',mode:'strong',sign:true},
       ...corridor([.18,.40,.62,.84],.195),
       {rect:[.42,.64,.13,.022],colour:'#4ce9e3'},
       {rect:[.62,.69,.014,.12],colour:'#ff4ba9',mode:'blink'},
@@ -14,15 +14,15 @@ export const HOTEL_ATMOSPHERE={
   love:{
     lights:[
       ...corridor([.16,.37,.58,.79],.20),
-      {rect:[.61,.64,.034,.065],colour:'#ff54b8',mode:'blink'},
-      {rect:[.62,.735,.013,.047],colour:'#ff70bf',mode:'strong'},
+      {rect:[.61,.64,.034,.065],colour:'#ff54b8',mode:'blink',sign:true},
+      {rect:[.62,.735,.013,.047],colour:'#ff70bf',mode:'strong',sign:true},
       {rect:[.43,.64,.07,.019],colour:'#ffd08a'},
       ...windows([[.04,.67,.29,.17],[.65,.67,.28,.17]]),
     ],lamps:[[.465,.66,.97]],vents:[[.15,.005]],
   },
   business:{
     lights:[
-      {rect:[.39,.15,.20,.055],colour:'#ffc175',mode:'strong'},
+      {rect:[.39,.15,.20,.055],colour:'#ffc175',mode:'strong',sign:true},
       {rect:[.10,.225,.10,.017],colour:'#56e8e8'},
       {rect:[.84,.225,.08,.017],colour:'#56e8e8',mode:'blink'},
       ...[.165,.34,.515,.69,.865].map((x,i)=>({rect:[x,.36,.014,.045],colour:'#ffd19a',mode:i===2?'strong':false})),

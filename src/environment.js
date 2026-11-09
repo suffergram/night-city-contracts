@@ -359,7 +359,7 @@ function hotelLights(style,time,seed,building={x:seed,w:0,lightSeed:seed}){
   const profile=HOTEL_ATMOSPHERE[style],variation=buildingLighting(building,profile.lights.filter(light=>light.window).length,profile.lamps.length,profile.lights.length);
   let window=0;
   return profile.lights.map((light,i)=>{
-    if(!light.window)return {...light,level:fixtureLight(time,variation.seed+i*37,variation.signs[i])};
+    if(!light.window)return {...light,level:fixtureLight(time,variation.seed+i*37,(light.sign?variation.signs:variation.fixtures)[i])};
     return {...light,level:controlledLight(variation.windows[window++]?1:0),glow:.35};
   });
 }
