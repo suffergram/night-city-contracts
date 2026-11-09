@@ -61,7 +61,12 @@ function followConnection(actor,player,world,dt) {
     const r=actor.route,end=r.up?r.connection.upper:r.connection.lower;
     r.phase ||= actor.climbing!=null?'traverse':'approach';
     const exitDirection=r.up?r.connection.dir:-r.connection.dir;
-    const reached=r.connection.kind==='stairs'?(center(actor).x-end.x)*exitDirection>=-2&&Math.abs(center(actor).x-end.x)<60:Math.abs(center(actor).x-end.x)<14;
+    const onLanding=!!standing&&Math.abs(actor.y+actor.h-end.y)<3;
+    if(r.connection.kind==='ladder'&&onLanding){
+      actor.climbing=null;actor.y=end.y-actor.h;actor.vy=0;actor.grounded=true;
+    }
+    // Dodging or knockback can move an enemy away from the ladder after landing.
+    const reached=r.connection.kind==='stairs'?(center(actor).x-end.x)*exitDirection>=-2&&Math.abs(center(actor).x-end.x)<60:onLanding;
     if(actor.climbing==null&&actor.grounded&&Math.abs(actor.y+actor.h-end.y)<3&&reached){
       actor.lastRoute={key:r.connection.kind+':'+r.connection.id,up:r.up};actor.routeCooldown=.8;clearRoute();
     }else if(r.phase==='approach'&&(!targetGrounded||targetFloor===from&& !ownFlight || standing&&from!==(r.up?r.connection.from:r.connection.to))){
@@ -93,6 +98,7 @@ function followConnection(actor,player,world,dt) {
   if(!actor.route)return false;
   const r=actor.route,{connection,up}=r,start=up?connection.lower:connection.upper,end=up?connection.upper:connection.lower;
   actor.state='chase';
+  if(r.phase==='traverse'&&connection.kind==='ladder'&&actor.climbing==null&&!findLadder(actor,world,up?-1:1,connection.id))r.phase='approach';
   if(r.phase==='approach'){
     const dx=start.x-center(actor).x;
     actor.vx=Math.sign(dx)*Math.min(actor.speed,Math.abs(dx)/dt);
@@ -200,6 +206,8 @@ export function updateEnemies(world, player, bullets, dt, damagePlayer) {
       physics(e,world,dt,e.route?.connection.kind==='stairs'&&e.route.phase==='traverse'?e.route.connection.id:null);continue;
     }
     e.climbIntent=0;
+    // Enemies must not hang motionless when navigation is interrupted by combat.
+    if(e.climbing!=null){e.climbing=null;e.ladderCooldown=.15;e.vy=0;}
     if (e.dodge > 0) {
       e.state='evade';
     } else if (e.state === 'windup') {

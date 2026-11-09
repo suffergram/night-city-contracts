@@ -59,6 +59,25 @@ test('enemies use a ladder route to pursue a player on another floor',()=>{
   assert.ok(climbed);assert.equal(e.y+e.h,l.top);assert.equal(e.climbing,null);assert.ok(e.grounded);
 });
 
+test('an enemy displaced sideways after a ladder landing resumes pursuit and melee attacks',()=>{
+  const w=flat();w.floors=[GROUND,GROUND-105];w.platforms.push({x:400,y:GROUND-105,w:600,h:18});
+  w.ladders=[{id:0,x:500,top:GROUND-105,bottom:GROUND,w:24}];
+  const c={kind:'ladder',id:0,from:0,to:1,lower:{x:500,y:GROUND},upper:{x:500,y:GROUND-105}};w.connections=[c];
+  const e=enemy('heavy',550),p=player();
+  Object.assign(e,{y:GROUND-105-e.h,grounded:true,climbing:null,state:'climb',route:{connection:c,up:true,phase:'traverse'},cooldown:0,jumpCooldown:999});
+  Object.assign(p,{x:700,y:GROUND-105-p.h,grounded:true});w.enemies=[e];const start=e.x;let hits=0;
+  for(let i=0;i<600;i++)updateEnemies(w,p,[],1/120,()=>hits++);
+  assert.equal(e.route,null);assert.equal(e.climbing,null);assert.ok(e.x>start+10);assert.ok(hits>0);
+});
+
+test('an interrupted enemy climb releases the ladder instead of hanging during recovery',()=>{
+  const w=flat();w.ladders=[{id:0,x:500,top:GROUND-105,bottom:GROUND,w:24}];
+  const e=enemy('heavy',490),p=player();
+  Object.assign(e,{x:500-e.w/2,y:GROUND-55-e.h,grounded:false,climbing:0,climbIntent:-1,route:null,state:'recover',timer:.5});
+  w.enemies=[e];const y=e.y;updateEnemies(w,p,[],1/120,()=>{});
+  assert.equal(e.climbing,null);assert.ok(e.y>y);
+});
+
 test('enemy navigation completes entire diagonal stair flights in both directions',()=>{
   for(let seed=1;seed<=8;seed++)for(const up of [true,false]){
     const w=generateLevel(1,seed,'megablock'),s=w.stairs[0],start=up?s.lower:s.upper,end=up?s.upper:s.lower;
