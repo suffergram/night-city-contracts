@@ -74,7 +74,7 @@ test('market hotels are complete ground-standing buildings with reachable balcon
       assert.ok(Math.abs(d.w/d.h-def.size[0]/def.size[1])<1e-7);
       const balcony=w.platforms.find(p=>p.id===d.balconyId),roof=w.platforms.find(p=>p.id===d.roofId);
       assert.ok(balcony.y<GROUND&&roof.y<balcony.y);
-      assert.ok(GROUND-balcony.y>=119,'ground storey stands above the 105px stalls');
+      assert.ok(GROUND-balcony.y>=109,'ground storey stands above the 105px stalls');
       assert.ok(w.connections.some(c=>c.kind==='stairwell'&&c.upper.y===balcony.y&&c.lower.y===GROUND));
       assert.ok(!w.ladders.some(l=>l.top===balcony.y&&l.bottom===GROUND&&l.x>d.x&&l.x<d.x+d.w));
       assert.ok(w.ladders.some(l=>l.top===roof.y&&l.bottom===balcony.y));

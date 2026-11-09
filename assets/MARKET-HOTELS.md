@@ -12,7 +12,7 @@ Generated with the built-in imagegen tool. Runtime PNGs:
 
 The first floor stays visually unchanged. The balcony exit is a dark open doorway; no internal steps or handrails are visible. The staircase is represented by a bidirectional E interaction between the ground entrance and balcony doorway. Enemy routing uses the same connection. A separate exterior maintenance ladder connects the balcony to the roof.
 
-Native opaque sizes and balcony/roof levels are in `src/market-hotels.js`. Each building is uniformly scaled so its ground storey is at least 125px high, above the 105px market stalls. Width follows the original artwork proportions; balcony/roof platforms and internal entrance positions use the same scale. Old standalone rooftop doors are no longer generated. Shops join at authored structural sidewall anchors rather than protruding awnings/lanterns; joined sprite bounds intentionally overlap.
+Native opaque sizes and balcony/roof levels are in `src/market-hotels.js`. The business hotel keeps its existing scale (125px ground storey before foundation sinking). The hourly and love hotels use door-height anchors with visual adjustments of 1.05 and 1.11 respectively: approximately 6% and 9% smaller than their previous equal-width sizes. Each facade preserves its original proportions; balcony/roof platforms, foundation sinking and internal entrance positions use the same scale. Old standalone rooftop doors are no longer generated. Shops join at authored structural sidewall anchors rather than protruding awnings/lanterns; joined sprite bounds intentionally overlap.
 
 ## Prompts
 

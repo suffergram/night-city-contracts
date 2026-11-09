@@ -133,9 +133,9 @@ function hub() {
   stock = Object.keys(SLOTS).map(slot => makeItem(recommendedDepth(profile), Math.random, slot));
   camera = 0;cameraY=0; closeModal(); save(); updateUI();
 }
-function expedition(depth = recommendedDepth(profile),kind) {
+function expedition(depth = recommendedDepth(profile),kind,reroll=false) {
   // Explicit next-stage depth can never fall below the character's recorded strength.
-  depth = Math.max(depth, recommendedDepth(profile));
+  depth = reroll?depth:Math.max(depth, recommendedDepth(profile));
   mode = 'expedition'; world = generateLevel(depth,undefined,kind); resetCombat();
   Object.assign(player, { x:world.spawn.x, y:world.spawn.y-player.h, facing:world.spawn.x>world.width/2?-1:1, invuln: 1.2 });
   camera = horizontalCameraTarget();cameraY=0;closeModal();save();updateUI();
@@ -331,14 +331,19 @@ function press(key) {
 const physicalKeys = { Tab:'tab', Digit1:'1', Digit2:'2', Digit3:'3', Digit4:'4', Numpad1:'1', Numpad2:'2', Numpad3:'3', Numpad4:'4', KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyJ: 'j', KeyK: 'k', KeyR: 'r', KeyE: 'e', KeyQ: 'q', KeyB: 'b', KeyI: 'i', KeyP: 'p', ShiftLeft: 'shift', ShiftRight: 'shift', Space: ' ', Escape: 'escape', ArrowLeft: 'a', ArrowRight: 'd', ArrowUp: 'w', ArrowDown: 's' };
 window.addEventListener('keydown', event => {
   if(event.ctrlKey&&event.altKey&&!event.metaKey&&!event.shiftKey){
-    const code={Digit1:'godmode',Digit2:'oneshot',Digit3:'speed',Digit4:'ammo',Digit5:'jump',Numpad1:'godmode',Numpad2:'oneshot',Numpad3:'speed',Numpad4:'ammo',Numpad5:'jump'}[event.code];
+    const code={Digit1:'godmode',Digit2:'oneshot',Digit3:'speed',Digit4:'ammo',Digit5:'jump',Digit6:'reroll',Numpad1:'godmode',Numpad2:'oneshot',Numpad3:'speed',Numpad4:'ammo',Numpad5:'jump',Numpad6:'reroll'}[event.code];
     if(event.code==='KeyC'||code){
       event.preventDefault();if(event.repeat)return;
       if(event.code==='KeyC'){
         cheatHotkeysEnabled=!cheatHotkeysEnabled;
         if(modal==='depart'&&mode==='hub')departure();
         cheatNotice(cheatHotkeysEnabled?'Ввод читов: ВКЛ':'Ввод читов: ВЫКЛ');
-      }else if(cheatHotkeysEnabled&&!terminal())toggleCheat(code);
+      }else if(cheatHotkeysEnabled&&!terminal()){
+        if(code==='reroll'){
+          if(mode==='hub')cheatNotice('Перегенерация доступна в локации контракта');
+          else{expedition(world.depth,world.kind,true);cheatNotice('Новая планировка: '+world.name);}
+        }else toggleCheat(code);
+      }
       return;
     }
   }
