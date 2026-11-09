@@ -358,15 +358,18 @@ const physicalKeys = { Tab:'tab', Digit1:'1', Digit2:'2', Digit3:'3', Digit4:'4'
 window.addEventListener('keydown', event => {
   if(loadingScene)return;
   if(event.ctrlKey&&event.altKey&&!event.metaKey&&!event.shiftKey){
-    const code={Digit1:'godmode',Digit2:'oneshot',Digit3:'speed',Digit4:'ammo',Digit5:'jump',Digit6:'reroll',Numpad1:'godmode',Numpad2:'oneshot',Numpad3:'speed',Numpad4:'ammo',Numpad5:'jump',Numpad6:'reroll'}[event.code];
+    const code={Digit1:'godmode',Digit2:'oneshot',Digit3:'speed',Digit4:'ammo',Digit5:'jump',Digit6:'reroll',Digit7:'hub',Numpad1:'godmode',Numpad2:'oneshot',Numpad3:'speed',Numpad4:'ammo',Numpad5:'jump',Numpad6:'reroll',Numpad7:'hub'}[event.code];
     if(event.code==='KeyC'||code){
       event.preventDefault();if(event.repeat)return;
       if(event.code==='KeyC'){
         cheatHotkeysEnabled=!cheatHotkeysEnabled;
         if(modal==='depart'&&mode==='hub')departure();
         cheatNotice(cheatHotkeysEnabled?'Ввод читов: ВКЛ':'Ввод читов: ВЫКЛ');
-      }else if(cheatHotkeysEnabled&&!terminal()){
-        if(code==='reroll'){
+      }else if(cheatHotkeysEnabled&&(code==='hub'||!terminal())){
+        if(code==='hub'){
+          if(mode==='hub')cheatNotice('Ты уже в хабе');
+          else hub().then(()=>{if(!loadingScene)cheatNotice('Возвращение в хаб');});
+        }else if(code==='reroll'){
           if(mode==='hub')cheatNotice('Перегенерация доступна в локации контракта');
           else{expedition(world.depth,world.kind,true);cheatNotice('Новая планировка: '+world.name);}
         }else toggleCheat(code);
