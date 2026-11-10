@@ -5,7 +5,7 @@ import { BRANCHES, SKILLS, availablePoints, spentPoints, skillBudget, skillStatu
 import { advanceAnimation, animationInfo } from './animation.js';
 import { preloadSprites, prepareSprites, SPRITES, previewMarkup, paintPreviews } from './raster.js';
 import { aimAngle, aimedMuzzle, aimDirection } from './aim.js';
-import { preloadEnvironment, prepareEnvironment, ENVIRONMENT_ASSETS } from './environment.js';
+import { preloadEnvironment, prepareEnvironment, environmentAssetIds } from './environment.js';
 import {showLoading,loadingProgress,hideLoading,loadingError,nextPaint} from './loading.js';
 import {findStairwell,useStairwell} from './stairwells.js';
 import { ACTOR_HEIGHT, WEAPONS, weaponSlots, slotForKey, rifleSpread, coolRifle, fireInterval } from './weapons.js';
@@ -621,22 +621,26 @@ async function loadScene(title,setup){
   loadingScene=true;keys.clear();showLoading(title);
   try{
     await nextPaint();setup();lastInteraction=null;nextMinimap=0;
+    let loaded=0;const total=environmentAssetIds(world).length;
+    await preloadEnvironment(()=>loadingProgress(++loaded/total*.45,'Загрузка локации…'),world);
     if(equipmentSignature()!==preparedEquipment){
-      await prepareSprites(profile.equipment,p=>loadingProgress(p*.85,'Подготовка снаряжения…'));preparedEquipment=equipmentSignature();
+      await prepareSprites(profile.equipment,p=>loadingProgress(.45+p*.15,'Подготовка снаряжения…'));preparedEquipment=equipmentSignature();
     }
+    await prepareEnvironment(p=>loadingProgress(.60+p*.25,'Подготовка освещения…'),world);
     await prepareScene();render();hideLoading();loadingScene=false;canvas.focus({preventScroll:true});
   }catch(error){loadingError(error);}
 }
 async function boot(){
   showLoading();await nextPaint();
   try{
-    let loaded=0;const total=Object.keys(SPRITES).length+1+Object.keys(ENVIRONMENT_ASSETS).length;
+    setupHub();
+    let loaded=0;const total=Object.keys(SPRITES).length+1+environmentAssetIds(world).length;
     const progress=()=>loadingProgress(++loaded/total*.45,`Загрузка ресурсов · ${loaded} / ${total}`);
-    await Promise.all([preloadSprites(progress),preloadEnvironment(progress)]);
+    await Promise.all([preloadSprites(progress),preloadEnvironment(progress,world)]);
     await prepareSprites(profile.equipment,p=>loadingProgress(.45+p*.15,'Подготовка персонажа…'));
     preparedEquipment=equipmentSignature();
-    await prepareEnvironment(p=>loadingProgress(.60+p*.25,'Подготовка освещения и окружения…'));
-    setupHub();resize();new ResizeObserver(resize).observe(canvas.parentElement);
+    await prepareEnvironment(p=>loadingProgress(.60+p*.25,'Подготовка освещения и окружения…'),world);
+    resize();new ResizeObserver(resize).observe(canvas.parentElement);
     await prepareScene();render();hideLoading();loadingScene=false;last=performance.now();
     canvas.focus({preventScroll:true});requestAnimationFrame(frame);
     toast('1–4 — выбрать оружие · ЛКМ — атака · ПКМ — блок · Shift — перекат · Tab — персонаж.');

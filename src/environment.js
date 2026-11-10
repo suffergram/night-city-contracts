@@ -1,6 +1,6 @@
 import { GROUND } from './world.js';
 import { ACTOR_HEIGHT } from './weapons.js';
-import {createDressing,DETAIL_SPRITES} from './dressing.js';
+import {createDressing,DETAIL_SPRITES,DETAIL_POOLS} from './dressing.js';
 import {fitScenery,sceneryContactInset} from './scenery-sizes.js';
 import {marketCell,marketStyle,isMarketStall} from './market-stalls.js';
 import {MARKET_HOTELS} from './market-hotels.js';
@@ -89,7 +89,7 @@ export function parallaxTiles(camera, viewportWidth, tileWidth, speed) {
   for (let x = start - tileWidth; x < viewportWidth + tileWidth; x += tileWidth) tiles.push(x);
   return tiles;
 }
-const images = new Map(); let loading;
+const images = new Map(),pendingImages=new Map(),preparedEnvironmentTasks=new Set();
 const slices = new Map();
 const layerSurfaces = new Map();
 const roadSurfaces=new Map();
@@ -111,32 +111,59 @@ const CITY_SCREENS={
   metropolisFar:[{r:[.806,.085,.115,.36],colour:'#e556c3'},{r:[.225,.02,.08,.28],colour:'#53ddea'}],
   metropolisMid:[{r:[.388,.33,.063,.25],colour:'#53ddea'},{r:[.633,.405,.044,.24],colour:'#e556c3'},{r:[.10,.38,.04,.18],colour:'#53ddea'}],
 };
-export function preloadEnvironment(onProgress=()=>{}) {
+export function environmentAssetIds(world=null){
+  if(!world)return Object.keys(ENVIRONMENT_ASSETS); // Full atlas preview remains supported.
+  const ids=new Set(['props',exitStyle(world).asset]);
+  if(world.kind==='megablock')ids.add('interiorWall');
+  else{ids.add('road');for(const layer of backdropLayers(world))if(world.kind!=='port'||layer.asset!=='nearCity')ids.add(layer.asset);}
+  if(world.kind){ids.add('locations');if(world.decor?.some(d=>isMarketStall(d.kind)&&marketStyle(d).atlas==='market'))ids.add('market');}
+  const details=world.details?.map(d=>d.sprite)||DETAIL_POOLS[world.kind||'hub']||[];
+  for(const name of details)if(DETAIL_SPRITES[name])ids.add(DETAIL_SPRITES[name].atlas);
+  for(const d of world.decor||[]){
+    if(d.kind==='marketHotel')ids.add(MARKET_HOTELS[d.style].asset);
+    if(d.kind==='marketBuilding'){const asset=MARKET_BUILDINGS[d.style].asset;ids.add(asset);ids.add(asset+'Lit');}
+  }
+  for(const id of [...ids])if(ENVIRONMENT_ASSETS[id+'Off'])ids.add(id+'Off');
+  return [...ids];
+}
+export function preloadEnvironment(onProgress=()=>{},world=null) {
   if (typeof Image === 'undefined') return Promise.resolve();
-  return loading ||= Promise.all(Object.entries(ENVIRONMENT_ASSETS).map(([id, url]) => new Promise((resolve, reject) => {
-    const image = new Image(); image.onload = async () => { try{await image.decode?.();images.set(id, image);if(id.endsWith('Off')){slices.clear();detailMaterials.clear();locationVariants.clear();}onProgress(id);resolve();}catch(error){reject(error);} }; image.onerror = () => reject(new Error(`Cannot load ${url}`)); image.src = url;
-  })));
+  return Promise.all(environmentAssetIds(world).map(id=>{
+    if(images.has(id)){onProgress(id);return Promise.resolve();}
+    if(!pendingImages.has(id)){
+      const url=ENVIRONMENT_ASSETS[id];
+      const promise=new Promise((resolve,reject)=>{
+        const image=new Image();image.onload=async()=>{try{await image.decode?.();images.set(id,image);resolve();}catch(error){reject(error);}};
+        image.onerror=()=>reject(new Error(`Cannot load ${url}`));image.src=url;
+      }).finally(()=>pendingImages.delete(id));
+      pendingImages.set(id,promise);
+    }
+    return pendingImages.get(id).then(()=>onProgress(id));
+  }));
 }
 export function environmentDiagnostics() { return Object.fromEntries(Object.keys(ENVIRONMENT_ASSETS).map(id => [id, images.has(id)])); }
 // Prepare pixel masks and light layers between loading-screen paints, not in combat.
-export async function prepareEnvironment(onProgress=()=>{}){
+export async function prepareEnvironment(onProgress=()=>{},world=null){
   const canvas=document.createElement('canvas');canvas.width=canvas.height=128;
-  const ctx=canvas.getContext('2d'),tasks=[];
+  const ctx=canvas.getContext('2d'),tasks=[],required=new Set(environmentAssetIds(world));
+  const enqueue=(key,task)=>{if(!preparedEnvironmentTasks.has(key))tasks.push(()=>{task();preparedEnvironmentTasks.add(key);});};
   for(const [atlas,count]of Object.entries({props:12,locations:16,market:9,life:16,worksite:16})){
-    for(let index=0;index<count;index++)tasks.push(()=>{
+    if(!required.has(atlas))continue;
+    for(let index=0;index<count;index++)enqueue(atlas+':'+index,()=>{
       const p=prop(index,atlas);if(!p)return;
       drawLights(ctx,p,atlas==='props'?PROP_LIGHTS[index]||[]:OBJECT_LIGHTS[atlas]?.[index]||[],0,0,100,100,0,index,atlas+':'+index);
       for(const def of Object.values(DETAIL_SPRITES))if(def.atlas===atlas&&def.frame===index)detailMaterial(p,def);
     });
   }
-  for(const [style,def]of Object.entries(MARKET_HOTELS))tasks.push(()=>{
+  for(const [style,def]of Object.entries(MARKET_HOTELS))if(required.has(def.asset))enqueue(def.asset,()=>{
     drawLocationProp(ctx,0,0,0,100,100,0,false,def.asset,0);
     drawHotelAtmosphere(ctx,{style,x:0,y:0,w:100,h:100},prop(0,def.asset),0);
   });
-  for(const [style,def]of Object.entries(MARKET_BUILDINGS))tasks.push(()=>{
+  for(const [style,def]of Object.entries(MARKET_BUILDINGS))if(required.has(def.asset))enqueue(def.asset,()=>{
     drawBuildingAtmosphere(ctx,{style,x:0,y:0,w:100,h:100},prop(0,def.asset),0,images.get(def.asset+'Lit'));
   });
-  for(const atlas of Object.keys(ENVIRONMENT_ASSETS).filter(id=>id.startsWith('exit')&&!id.endsWith('Off')))tasks.push(()=>prop(0,atlas));
+  for(const atlas of [...required].filter(id=>id.startsWith('exit')&&!id.endsWith('Off')))enqueue(atlas,()=>prop(0,atlas));
+  if(!tasks.length)onProgress(1);
   for(const [i,task]of tasks.entries()){
     ctx.clearRect(0,0,128,128);task();onProgress((i+1)/tasks.length);
     await new Promise(resolve=>setTimeout(resolve,0));
@@ -212,7 +239,7 @@ function drawRoad(ctx,canvas,camera) {
   ctx.restore();
 }
 export function drawRasterBackdrop(ctx, canvas, camera,time=0,world=null,cameraY=0) {
-  if (!images.has('farCity')) return false;
+  if(!images.has(world?.kind==='megablock'?'interiorWall':backdropLayers(world)[0].asset))return false;
   if(world?.kind==='megablock'){
     ctx.fillStyle='#0c101b';ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.save();ctx.translate(-camera,-cameraY);
