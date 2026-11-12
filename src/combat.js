@@ -22,7 +22,7 @@ export function physics(actor, world, dt, stairId=undefined) {
   }
   actor.climbing=null;
   const oldBottom = actor.y + actor.h,wasGrounded=actor.grounded;
-  actor.x = Math.max(20, Math.min(world.width - actor.w - 20, actor.x + actor.vx * dt));
+  actor.x = Math.max(world.playBounds?.left??20, Math.min((world.playBounds?.right??(world.width-20))-actor.w, actor.x + actor.vx * dt));
   if(wasGrounded&&Math.abs(actor.vx)>0){
     const step=world.platforms.filter(p=>p.stair&&acceptsStair(p)&&p.y<oldBottom-.1&&oldBottom-p.y<=21&&actor.x+actor.w>p.x&&actor.x<p.x+p.w).sort((a,b)=>a.y-b.y)[0];
     if(step){actor.y=step.y-actor.h;actor.vy=0;actor.grounded=true;return;}

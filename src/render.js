@@ -2,7 +2,7 @@ import { GROUND } from './world.js';
 import { drawMercenary } from './character.js';
 import { skillEffects } from './skills.js';
 import { drawRasterActor } from './raster.js';
-import { drawRasterBackdrop, drawRasterEnvironment, HUMAN_SCALE } from './environment.js';
+import { drawRasterBackdrop, drawRasterEnvironment, drawRasterForeground, HUMAN_SCALE } from './environment.js';
 import { ACTOR_HEIGHT, spriteHeight, WEAPONS } from './weapons.js';
 import { animationInfo } from './animation.js';
 import { canAim, aimedMuzzle, aimDirection } from './aim.js';
@@ -51,11 +51,12 @@ export function drawWorld(ctx, canvas, state) {
   }
   for (const b of bullets) line(b.x - b.vx * .012, b.y - b.vy * .012, b.x, b.y, b.owner === 'player' ? '#f5f16c' : '#ff6386', 1.8);
   for (const particle of particles) { ctx.globalAlpha = Math.min(1, particle.life * 2); rect(particle.x, particle.y, 2, 2, particle.color); } ctx.globalAlpha = 1;
+  drawRasterForeground(ctx,canvas,world,camera,cameraY,time);
   for (const f of floats) { ctx.globalAlpha = Math.min(1, f.life * 2); text(f.text, f.x, f.y, 10, f.color); } ctx.globalAlpha = 1;
   ctx.restore();
   // Navigation is rendered separately inside the biomonitor HUD.
   // Weather is intentionally absent; combat feedback is independent of scenery.
-  const vignette = ctx.createRadialGradient(W / 2, 320, 200, W / 2, 320, W * .8); vignette.addColorStop(0, '#02031200'); vignette.addColorStop(1, '#02031277'); ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
+  if(!world.towerScene){const vignette = ctx.createRadialGradient(W / 2, 320, 200, W / 2, 320, W * .8); vignette.addColorStop(0, '#02031200'); vignette.addColorStop(1, '#02031277'); ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);}
   if (mouse.active) { const x = mouse.x, y = mouse.y; line(x - 8, y, x - 3, y, '#f7ef55'); line(x + 3, y, x + 8, y, '#f7ef55'); line(x, y - 8, x, y - 3, '#f7ef55'); line(x, y + 3, x, y + 8, '#f7ef55'); }
 
   function actor(x, y, facing, type, actorState = {}) {
@@ -78,6 +79,7 @@ export function drawMinimap(ctx, canvas, world, player) {
   ctx.clearRect(0,0,w,h);ctx.save();ctx.strokeStyle='#67828c';ctx.lineWidth=1;
   for(const p of world.platforms){ctx.beginPath();ctx.moveTo(px(p.x),py(p.y));ctx.lineTo(px(p.x+p.w),py(p.y));ctx.stroke();}
   ctx.strokeStyle='#b4a563';for(const l of world.ladders||[]){ctx.beginPath();ctx.moveTo(px(l.x),py(l.top));ctx.lineTo(px(l.x),py(l.bottom));ctx.stroke();}
+  ctx.strokeStyle='#99aa8f';for(const c of world.connections||[])if(c.kind==='stairwell'){ctx.beginPath();ctx.moveTo(px(c.lower.x),py(c.lower.y));ctx.lineTo(px(c.upper.x),py(c.upper.y));ctx.stroke();}
   ctx.fillStyle=world.kills===world.enemies.length?'#65f5bb':'#f65b80';ctx.fillRect(px(world.portal.x)-2,py(world.portal.y??GROUND)-3,4,4);
   ctx.fillStyle='#75eef2';ctx.fillRect(px(player.x+player.w/2)-2,py(player.y+player.h)-3,4,4);ctx.restore();
 }

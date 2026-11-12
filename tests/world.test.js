@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GROUND, BAG_LIMIT, BALANCE, SLOTS, DEFAULT_PROFILE, stats, random, generateLevel, makeItem, loadProfile, addXp, recommendedDepth, enemyReward, trainingCost } from '../src/world.js';
 import {MARKET_HOTELS,hotelSize,hotelSink} from '../src/market-hotels.js';
+import {physics} from '../src/combat.js';
 
 function walkableNodes(world) {
   return world.platforms.flatMap(p=>{
@@ -19,7 +20,7 @@ function reachableNodes(w) {
       const flight=rise<=138?(620+Math.sqrt(620**2-2*1330*rise))/1330:0;
       let reachable=flight>0&&gap<245*flight-25;
       if(!reachable)reachable=w.ladders.some(l=>((p.y===l.bottom&&q.y===l.top)||(p.y===l.top&&q.y===l.bottom))&&l.x>=p.x&&l.x<=p.x+p.w&&l.x>=q.x&&l.x<=q.x+q.w);
-      if(!reachable)reachable=w.connections.some(c=>c.kind==='stairwell'&&[[c.lower,c.upper],[c.upper,c.lower]].some(([a,b])=>p.y===a.y&&q.y===b.y&&a.x>=p.x&&a.x<=p.x+p.w&&b.x>=q.x&&b.x<=q.x+q.w));
+      if(!reachable)reachable=w.connections.some(c=>['stairs','stairwell'].includes(c.kind)&&[[c.lower,c.upper],[c.upper,c.lower]].some(([a,b])=>p.y===a.y&&q.y===b.y&&a.x>=p.x&&a.x<=p.x+p.w&&b.x>=q.x&&b.x<=q.x+q.w));
       if(reachable){seen.add(i);queue.push(i);}
     }
   }
@@ -36,16 +37,17 @@ test('seeded layouts have four themes and reachable enemies, random caches and e
     for(const c of w.chests)assert.ok(reachable(c.x+17,c.y+25),w.kind+' cache seed '+seed);
     for(const e of w.enemies)assert.ok(reachable(e.x+e.w/2,e.y+e.h),w.kind+' enemy seed '+seed);
     assert.ok(reachable(w.portal.x,w.portal.y),w.kind+' portal seed '+seed);
-    if(w.kind==='megablock'){assert.ok(w.floors.length>=3);assert.ok(w.stairs.length>=2);assert.ok(w.ladders.length>=2);assert.equal(w.portal.y,Math.min(...w.floors));}
+    if(w.kind==='megablock'){assert.ok(w.floors.length>=3);assert.equal(w.stairs.length,w.floors.length-1);assert.equal(w.portal.y,Math.min(...w.floors));}
   }
-  assert.equal(kinds.size,4);assert.ok(chests.size>290);assert.ok(exits.size>290);
+  assert.equal(kinds.size,4);assert.ok(chests.size>290);assert.ok(exits.size>190);
   assert.deepEqual(generateLevel(3,42),generateLevel(3,42));assert.notDeepEqual(generateLevel(3,42),generateLevel(3,43));
 });
 test('each location theme supports different layouts at the same difficulty',()=>{
   for(const kind of ['industrial','port','market','megablock']){
     const variants=Array.from({length:20},(_,i)=>generateLevel(2,i,kind));
     assert.ok(variants.every(w=>w.kind===kind));
-    assert.ok(new Set(variants.map(w=>JSON.stringify(w.platforms))).size>=19);
+    const layouts=new Set(variants.map(w=>JSON.stringify(w.platforms)));
+    assert.ok(layouts.size>=19);
     assert.ok(new Set(variants.map(w=>JSON.stringify(w.chests))).size>=19);
   }
 });
@@ -84,10 +86,37 @@ test('market hotels are complete ground-standing buildings with reachable balcon
   }
   assert.ok(count>=60);assert.equal(variants.size,3);
 });
-test('megablock uses wall lights on every floor instead of street poles',()=>{
+test('megatower has continuous architectural bays and physical staircase flights',()=>{
   for(let seed=1;seed<=30;seed++){
     const w=generateLevel(1,seed,'megablock');assert.equal(w.lamps.length,0);
-    for(const [floor,y]of w.floors.entries())assert.ok(w.wallLights.some(l=>l.floor===floor&&l.y===y-150));
+    assert.equal(w.name,'Мегабашня');assert.equal(w.towerArchitecture,true);assert.equal(w.width,1420);
+    assert.ok(w.floors.length>=9&&w.floors.length<=12);assert.equal(w.wallLights.length,0);
+    assert.equal(w.details.length,0);assert.equal(w.stairs.length,w.floors.length-1);assert.equal(w.ladders.length,0);
+    assert.ok(!w.connections.some(c=>c.kind==='stairwell'));
+    for(const style of ['gunsmith','gym','canteen','alcove']){
+      const count=w.decor.filter(d=>d.style===style).length;assert.ok(count>=1&&count<=2);
+    }
+    for(const y of w.floors){
+      const bays=w.decor.filter(d=>d.kind==='towerBay'&&d.y===y).sort((a,b)=>a.x-b.x);
+      assert.equal(bays.length,5);
+      for(let i=1;i<bays.length;i++)assert.equal(bays[i].x,bays[i-1].x+bays[i-1].w);
+    }
+  }
+});
+
+test('randomized megatower flights are traversable up and down and repeat for the same seed',()=>{
+  for(let seed=1;seed<=40;seed++){
+    const w=generateLevel(1,seed,'megablock');
+    assert.deepEqual(w,generateLevel(1,seed,'megablock'));
+    for(const f of w.stairs)for(const direction of [1,-1]){
+      const start=direction===1?f.lower:f.upper,end=direction===1?f.upper:f.lower,dir=f.dir*direction;
+      const actor={x:start.x-10,y:start.y-60,w:20,h:60,vx:dir*120,vy:0,grounded:true};let reached=false;
+      for(let tick=0;tick<500;tick++){
+        physics(actor,w,1/120,f.id);
+        if(Math.abs(actor.y+actor.h-end.y)<3&&(actor.x+actor.w/2-end.x)*dir>=-2){reached=true;break;}
+      }
+      assert.ok(reached,`seed ${seed}, flight ${f.id}, direction ${direction}`);
+    }
   }
 });
 

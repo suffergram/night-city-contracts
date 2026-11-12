@@ -7,7 +7,7 @@
 <canvas id="preview" width="1200" height="660"></canvas>
 <p id="summary"></p><p>Перемещай камеру по горизонтали и этажам. Пауза останавливает свет и частицы. Персонажи показаны для сравнения масштаба.</p>
 <script type="module">
-import {preloadEnvironment,drawRasterBackdrop,drawRasterEnvironment} from '../src/environment.js';
+import {preloadEnvironment,drawRasterBackdrop,drawRasterEnvironment,drawRasterForeground} from '../src/environment.js';
 import {preloadSprites,drawRasterActor} from '../src/raster.js';
 import {GROUND,DEFAULT_PROFILE,generateLevel,freshLevelSeed} from '../src/world.js';
 import {LEVEL_KINDS} from '../src/level-layout.js';
@@ -43,6 +43,7 @@ function draw(){
   for(let x=220;x<world.width;x+=900)references.push({x,y:GROUND});
   for(const p of world.platforms)if(['hotelBalcony','buildingGallery'].includes(p.art)||p.deck&&p.w>=150)references.push({x:p.x+p.w*.5,y:p.y});
   for(const {x,y}of references)if(x>camera-100&&x<camera+canvas.width+100&&y>cameraY-100&&y<cameraY+canvas.height+100){ctx.save();ctx.translate(x,y);drawRasterActor(ctx,{grounded:true,animation:{name:'idle',time}},'hero',DEFAULT_PROFILE.equipment,{height:60});ctx.restore();}
+  drawRasterForeground(ctx,canvas,world,camera,cameraY,time);
   ctx.restore();
 }
 document.getElementById('pause').onclick=()=>{playing=!playing;document.getElementById('pause').textContent=playing?'Пауза':'Продолжить';};

@@ -30,7 +30,7 @@ let particles = [], floats = [], bullets = [], shake = 0, toastTimer, stock = []
 const mouse = { active: false, x: 0, y: 0 };
 const cheats={godmode:false,oneshot:false,speed:false,ammo:false,jump:false};
 const cheatNames={godmode:'Неуязвимость',oneshot:'Убийство с одного попадания',speed:'Быстрый бег ×3',ammo:'Бесконечные патроны',jump:'Мегапрыжок'};
-const cheatLocations={industrial:'Промзона',port:'Порт',market:'Нижний квартал',megablock:'Мегаблок'};
+const cheatLocations={industrial:'Промзона',port:'Порт',market:'Нижний квартал',megablock:'Мегабашня'};
 let cheatHotkeysEnabled=false,cheatNoticeTimer;
 let loadingScene=true,nextMinimap=0,lastInteraction='',lastReloadStatus='',preparedEquipment='';
 const equipmentSignature=()=>JSON.stringify(['head','torso','legs','feet'].map(slot=>profile.equipment[slot]?[profile.equipment[slot].id,profile.equipment[slot].rarity]:null));
@@ -388,6 +388,7 @@ function updateAim() {
 }
 function horizontalCameraTarget(dt=0) {
   const width=canvas.width,cx=center(player).x;
+  if(world.kind==='megablock'&&world.width<width)return (world.width-width)/2;
   let look;
   if(CAMERA_MODE==='three-positions'){
     if(!mouse.active)cameraPosition=player.facing;
@@ -578,7 +579,7 @@ function findTarget() {
   if (mode === 'hub') candidates.push({ kind: 'merchant', x: 325, y: GROUND - 30, label: 'Мира · Оружейник' }, { kind: 'trainer', x: 800, y: GROUND - 30, label: 'Орин · Рипер' }, { kind: 'medbay', x: 580, y: GROUND - 15, label: 'Медстанция · Восстановление' });
   for (const c of world.chests) if (!c.open) candidates.push({ kind: 'chest', x: c.x, y: c.y, label: 'Вскрыть тайник', object: c });
   const stairwell=findStairwell(player,world);
-  if(stairwell)candidates.unshift({kind:'stairwell',x:stairwell.start.x,y:stairwell.start.y-player.h/2,label:stairwell.up?'Внутренняя лестница · На второй этаж':'Внутренняя лестница · На первый этаж',object:stairwell});
+  if(stairwell)candidates.unshift({kind:'stairwell',x:stairwell.start.x,y:stairwell.start.y-player.h/2,label:world.towerScene?`Лестничный проход · Ярус ${(stairwell.up?stairwell.connection.to:stairwell.connection.from)+1}`:stairwell.up?'Внутренняя лестница · На второй этаж':'Внутренняя лестница · На первый этаж',object:stairwell});
   target = candidates.filter(t => Math.abs(t.x - center(player).x) < 77 && Math.abs(t.y - center(player).y) < 65).sort((a, b) => Math.abs(a.x - player.x) - Math.abs(b.x - player.x))[0];
   const label=target?.label||'';
   if(label!==lastInteraction){lastInteraction=label;$('interaction').classList.toggle('hidden',!target);if(target)$('interaction').innerHTML=`<kbd>E</kbd> ${label}`;}

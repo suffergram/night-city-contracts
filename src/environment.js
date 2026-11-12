@@ -8,6 +8,7 @@ import {MARKET_BUILDINGS} from './market-buildings.js';
 import {drawBuildingAtmosphere} from './building-atmosphere.js';
 import {HOTEL_ATMOSPHERE} from './hotel-atmosphere.js';
 import {buildingLighting,fixtureLight} from './building-light-variation.js';
+import {TOWER_BAYS,drawTowerScene,drawTowerBay,drawTowerArchitecture,drawTowerSceneForeground} from './tower.js';
 import {withUnlitBase,drawSpriteEmission} from './sprite-lighting.js';
 import {OBJECT_LIGHTS} from './object-lights.js';
 import {exitStyle} from './exits.js';
@@ -15,6 +16,29 @@ import {drawTransportExit} from './exit-render.js';
 import {lightLevel,controlledLight,ambientGlow,drawLampAtmosphere,drawVentSteam,drawCityTraffic,drawHologram,drawScreenAnimation,drawCookingSteam,drawStallLights,drawHarbourHaze,drawElectricalFault,drawSceneDust,drawWarningBeacon} from './ambient.js';
 
 export const ENVIRONMENT_ASSETS = {
+  towerResidential:new URL('../assets/environment/tower-residential-v1.png',import.meta.url).href,
+  towerResidentialLit:new URL('../assets/environment/tower-residential-lit-v1.png',import.meta.url).href,
+  towerHousingGrey:new URL('../assets/environment/tower-housing-grey-v2.png',import.meta.url).href,
+  towerHousingGreyLit:new URL('../assets/environment/tower-housing-grey-lit-v2.png',import.meta.url).href,
+  towerHousingOchre:new URL('../assets/environment/tower-housing-ochre-v2.png',import.meta.url).href,
+  towerHousingOchreLit:new URL('../assets/environment/tower-housing-ochre-lit-v2.png',import.meta.url).href,
+  towerServices:new URL('../assets/environment/tower-services-v1.png',import.meta.url).href,
+  towerServicesLit:new URL('../assets/environment/tower-services-lit-v1.png',import.meta.url).href,
+  towerUtility:new URL('../assets/environment/tower-utility-v1.png',import.meta.url).href,
+  towerUtilityLit:new URL('../assets/environment/tower-utility-lit-v1.png',import.meta.url).href,
+  towerSlab:new URL('../assets/environment/tower-gallery-v5.png',import.meta.url).href,
+  towerConcrete:new URL('../assets/environment/tower-slab-v2.png',import.meta.url).href,
+  towerStair:new URL('../assets/environment/tower-stairs-v6.png',import.meta.url).href,
+  towerElectrics:new URL('../assets/environment/tower-electrics-v6.png',import.meta.url).href,
+  towerStructure:new URL('../assets/environment/tower-structure-v6.png',import.meta.url).href,
+  towerCommons:new URL('../assets/environment/tower-commons-open-v6.png',import.meta.url).href,
+  towerPlant:new URL('../assets/environment/tower-plant-v1.png',import.meta.url).href,
+  towerDetails:new URL('../assets/environment/tower-details-v1.png',import.meta.url).href,
+  towerCables:new URL('../assets/environment/tower-cables-v1.png',import.meta.url).href,
+  towerFacade:new URL('../assets/environment/tower-facade-v1.png',import.meta.url).href,
+  towerClutter:new URL('../assets/environment/tower-clutter-v2.png',import.meta.url).href,
+  towerBasement:new URL('../assets/environment/tower-basement-v1.png',import.meta.url).href,
+  towerForeground:new URL('../assets/environment/tower-foreground-v1.png',import.meta.url).href,
   buildingHousingALit:new URL('../assets/environment/market-building-housing-a-interior-v1.png',import.meta.url).href,
   buildingHousingBLit:new URL('../assets/environment/market-building-housing-b-interior-v1.png',import.meta.url).href,
   buildingMinimarketALit:new URL('../assets/environment/market-building-minimarket-a-interior-v1.png',import.meta.url).href,
@@ -114,8 +138,12 @@ const CITY_SCREENS={
 export function environmentAssetIds(world=null){
   if(!world)return Object.keys(ENVIRONMENT_ASSETS); // Full atlas preview remains supported.
   const ids=new Set(['props',exitStyle(world).asset]);
-  if(world.kind==='megablock')ids.add('interiorWall');
-  else{ids.add('road');for(const layer of backdropLayers(world))if(world.kind!=='port'||layer.asset!=='nearCity')ids.add(layer.asset);}
+  if(world.towerArchitecture){
+    for(const asset of ['propsOff','towerSlab','towerConcrete','towerStair','towerPlant','towerDetails','towerStructure','towerElectrics','towerFacade','towerClutter','towerBasement'])ids.add(asset);
+    for(const d of world.decor)if(d.kind==='towerBay'){const asset=TOWER_BAYS[d.style].asset;ids.add(asset);if(ENVIRONMENT_ASSETS[asset+'Lit'])ids.add(asset+'Lit');}
+    return [...ids];
+  }
+  ids.add('road');for(const layer of backdropLayers(world))if(world.kind!=='port'||layer.asset!=='nearCity')ids.add(layer.asset);
   if(world.kind){ids.add('locations');if(world.decor?.some(d=>isMarketStall(d.kind)&&marketStyle(d).atlas==='market'))ids.add('market');}
   const details=world.details?.map(d=>d.sprite)||DETAIL_POOLS[world.kind||'hub']||[];
   for(const name of details)if(DETAIL_SPRITES[name])ids.add(DETAIL_SPRITES[name].atlas);
@@ -142,6 +170,11 @@ export function preloadEnvironment(onProgress=()=>{},world=null) {
   }));
 }
 export function environmentDiagnostics() { return Object.fromEntries(Object.keys(ENVIRONMENT_ASSETS).map(id => [id, images.has(id)])); }
+export function drawRasterForeground(ctx,canvas,world,camera,cameraY,time){
+  if(world.towerArchitecture)drawTowerSceneForeground(ctx,canvas,world,camera,cameraY,towerSource);
+}
+const towerSource=(asset,index=0)=>prop(index,asset);
+const towerImage=asset=>images.get(asset);
 // Prepare pixel masks and light layers between loading-screen paints, not in combat.
 export async function prepareEnvironment(onProgress=()=>{},world=null){
   const canvas=document.createElement('canvas');canvas.width=canvas.height=128;
@@ -162,6 +195,17 @@ export async function prepareEnvironment(onProgress=()=>{},world=null){
   for(const [style,def]of Object.entries(MARKET_BUILDINGS))if(required.has(def.asset))enqueue(def.asset,()=>{
     drawBuildingAtmosphere(ctx,{style,x:0,y:0,w:100,h:100},prop(0,def.asset),0,images.get(def.asset+'Lit'));
   });
+  for(const [style,def]of Object.entries(TOWER_BAYS))if(required.has(def.asset))enqueue(def.asset+':'+(def.index||0),()=>{
+    drawTowerBay(ctx,{style,x:0,y:100,w:280,h:112},prop(def.index||0,def.asset),images.get(def.asset+'Lit'),0);
+  });
+  for(const asset of ['towerSlab','towerConcrete','towerStair','towerPlant','towerBasement'])if(required.has(asset))enqueue(asset,()=>prop(0,asset));
+  if(required.has('towerCables'))for(let i=0;i<3;i++)enqueue('towerCables:'+i,()=>prop(i,'towerCables'));
+  if(required.has('towerElectrics'))for(let i=0;i<3;i++)enqueue('towerElectrics:'+i,()=>prop(i,'towerElectrics'));
+  if(required.has('towerStructure'))for(let i=0;i<2;i++)enqueue('towerStructure:'+i,()=>prop(i,'towerStructure'));
+  if(required.has('towerFacade'))for(let i=0;i<4;i++)enqueue('towerFacade:'+i,()=>prop(i,'towerFacade'));
+  if(required.has('towerClutter'))for(let i=0;i<16;i++)enqueue('towerClutter:'+i,()=>prop(i,'towerClutter'));
+  if(required.has('towerDetails'))for(let i=0;i<4;i++)enqueue('towerDetails:'+i,()=>prop(i,'towerDetails'));
+  if(required.has('towerForeground'))for(let i=0;i<4;i++)enqueue('towerForeground:'+i,()=>prop(i,'towerForeground'));
   for(const atlas of [...required].filter(id=>id.startsWith('exit')&&!id.endsWith('Off')))enqueue(atlas,()=>prop(0,atlas));
   if(!tasks.length)onProgress(1);
   for(const [i,task]of tasks.entries()){
@@ -176,7 +220,8 @@ function prop(index,atlas='props') {
   const image = images.get(atlas); if (!image) return null;
   const col = index % 4, row = Math.floor(index / 4);
   const rows=atlas==='props'?3:4;
-  const cell=/^(hotel|exit|building)/.test(atlas)?{x:0,y:0,w:image.width,h:image.height}:atlas==='market'?marketCell(index,image.width,image.height):{x:Math.round(col*image.width/4),y:Math.round(row*image.height/rows),w:Math.round((col+1)*image.width/4)-Math.round(col*image.width/4),h:Math.round((row+1)*image.height/rows)-Math.round(row*image.height/rows)};
+  const detailRect=atlas==='towerClutter'?[index%4/4,Math.floor(index/4)/4,.25,.25]:['towerCables','towerElectrics'].includes(atlas)?[0,index/3,1,1/3]:atlas==='towerStructure'?[index/2,0,.5,1]:['towerFacade','towerCommons'].includes(atlas)?[index%2/2,Math.floor(index/2)/2,.5,.5]:atlas==='towerDetails'?[[.14,0,.21,.49],[.46,.15,.54,.265],[0,.54,.49,.46],[.65,.49,.20,.51]][index]:atlas==='towerForeground'?[[.065,.10,.37,.44],[.66,0,.19,.56],[.01,.63,.48,.34],[.51,.63,.49,.29]][index]:null;
+  const cell=detailRect?{x:Math.round(detailRect[0]*image.width),y:Math.round(detailRect[1]*image.height),w:Math.round(detailRect[2]*image.width),h:Math.round(detailRect[3]*image.height)}:atlas==='towerForeground'?{x:index%2*image.width/2,y:Math.floor(index/2)*image.height/2,w:image.width/2,h:image.height/2}:/^(hotel|exit|building|tower)/.test(atlas)?{x:0,y:0,w:image.width,h:image.height}:atlas==='market'?marketCell(index,image.width,image.height):{x:Math.round(col*image.width/4),y:Math.round(row*image.height/rows),w:Math.round((col+1)*image.width/4)-Math.round(col*image.width/4),h:Math.round((row+1)*image.height/rows)-Math.round(row*image.height/rows)};
   const {x,y,w,h}=cell;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true }); ctx.drawImage(image, x, y, w, h, 0, 0, w, h);
@@ -239,45 +284,8 @@ function drawRoad(ctx,canvas,camera) {
   ctx.restore();
 }
 export function drawRasterBackdrop(ctx, canvas, camera,time=0,world=null,cameraY=0) {
-  if(!images.has(world?.kind==='megablock'?'interiorWall':backdropLayers(world)[0].asset))return false;
-  if(world?.kind==='megablock'){
-    ctx.fillStyle='#0c101b';ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.save();ctx.translate(-camera,-cameraY);
-    const image=images.get('interiorWall'),rise=world.floorRise||190,bay=Math.round(rise*(image?image.width/image.height:1.5));
-    const tileKey='interior:'+rise;
-    if(image&&!layerSurfaces.has(tileKey)){
-      const tile=document.createElement('canvas');tile.width=bay;tile.height=rise;
-      const c=tile.getContext('2d');c.filter='brightness(.7) saturate(.65)';c.drawImage(image,0,0,bay,rise);layerSurfaces.set(tileKey,tile);
-    }
-    for(const y of world.floors){
-      if(y<cameraY-30||y-rise>cameraY+canvas.height+30)continue;
-      ctx.fillStyle='#242b2c';ctx.fillRect(camera,y-rise,canvas.width,rise);
-      const tile=layerSurfaces.get(tileKey);
-      for(let x=Math.floor(camera/bay)*bay;x<camera+canvas.width;x+=bay){
-        if(tile)ctx.drawImage(tile,x,y-rise,bay+1,rise);
-        // Structural joints and pilasters make continuous indoor corridor bays.
-        ctx.fillStyle='#131c20';ctx.fillRect(x,y-rise,12,rise);
-        ctx.fillStyle='#465050';ctx.fillRect(x+1,y-rise,2,rise);
-        ctx.fillStyle='#88918b55';for(const yy of [y-rise+20,y-26])ctx.fillRect(x+5,yy,2,2);
-      }
-      ctx.fillStyle='#0c1318';ctx.fillRect(camera,y-rise,canvas.width,12);
-      ctx.fillStyle='#4e5954';ctx.fillRect(camera,y-rise+12,canvas.width,2);
-      ctx.fillStyle='#121b20';ctx.fillRect(camera,y-13,canvas.width,13);
-      ctx.fillStyle='#53605b';ctx.fillRect(camera,y-14,canvas.width,2);
-    }
-    for(const lamp of world.wallLights||[]){
-      if(lamp.x<camera-100||lamp.x>camera+canvas.width+100||lamp.y+160<cameraY||lamp.y>cameraY+canvas.height+100)continue;
-      const {x,y,colour}=lamp,level=lightLevel(time,x,false);
-      ambientGlow(ctx,x,y+20,90,colour,.16*level);
-      const beam=ctx.createLinearGradient(x,y,x,y+120);beam.addColorStop(0,'#a7e3d219');beam.addColorStop(1,'#a7e3d200');
-      ctx.fillStyle=beam;ctx.beginPath();ctx.moveTo(x-18,y+5);ctx.lineTo(x+18,y+5);ctx.lineTo(x+55,y+120);ctx.lineTo(x-55,y+120);ctx.closePath();ctx.fill();
-      ctx.fillStyle='#080e13';ctx.fillRect(x-24,y-5,48,13);
-      ctx.fillStyle='#596763';ctx.fillRect(x-23,y-5,46,2);
-      ctx.fillStyle=colour;ctx.globalAlpha=.7+.3*level;ctx.fillRect(x-18,y-1,36,4);ctx.globalAlpha=1;
-      ctx.fillStyle='#84928a';ctx.fillRect(x-21,y,2,2);ctx.fillRect(x+19,y,2,2);
-    }
-    ctx.restore();return true;
-  }
+  if(world?.towerArchitecture){drawTowerScene(ctx,canvas);return true;}
+  if(!images.has(backdropLayers(world)[0].asset))return false;
   for (const layer of backdropLayers(world)) {
     if(world?.kind==='port'&&layer.asset==='nearCity')continue;
     const image = images.get(layer.asset); if (!image) continue;
@@ -445,6 +453,12 @@ function drawDeck(ctx,x,y,w,h){
   for(let xx=x;xx<x+w;xx+=tileWidth){const width=Math.min(tileWidth,x+w-xx);ctx.drawImage(p.image,p.x,p.y,p.w*width/tileWidth,p.h,xx,y,width,h);}
 }
 function drawLocation(ctx,canvas,world,camera,time,cameraY=0){
+  if(world.towerArchitecture){
+    drawTowerArchitecture(ctx,canvas,world,camera,cameraY,time,towerSource,towerImage);
+    for(const c of world.chests){ctx.save();if(c.open)ctx.globalAlpha=.45;drawProp(ctx,6,c.x,c.y+25,36,25,time);ctx.restore();}
+    drawTransportExit(ctx,world,'expedition',time,prop(0,exitStyle(world).asset));
+    return true;
+  }
   if(world.kind!=='megablock')drawRoad(ctx,canvas,camera);
   else{ctx.fillStyle='#080c15';ctx.fillRect(camera,GROUND,canvas.width,canvas.height+Math.abs(world.top));}
   const visible=o=>o.x+o.w>camera-100&&o.x<camera+canvas.width+100&&o.y+o.h>cameraY-160&&o.y-o.h<cameraY+canvas.height+160;
@@ -504,12 +518,13 @@ function drawLocation(ctx,canvas,world,camera,time,cameraY=0){
   }
   for(const p of world.platforms){
     if(p.x+p.w<camera||p.x>camera+canvas.width||p.y<cameraY-80||p.y>cameraY+canvas.height+80)continue;
-    if(p.ground){if(world.kind==='megablock')drawDeck(ctx,0,GROUND,world.width,20);continue;}
+    if(p.ground)continue;
     if(p.stair)continue; // Open metal treads are drawn with their flight below.
     if(!p.art||p.art==='canopy'||p.art==='pavilionRoof'){
+      const deck=drawDeck;
       let start=p.x;
-      for(const hole of [...(p.holes||[])].sort((a,b)=>a.x-b.x)){if(hole.x>start)drawDeck(ctx,start,p.y,hole.x-start,p.stair?9:18);start=Math.max(start,hole.x+hole.w);}
-      if(start<p.x+p.w)drawDeck(ctx,start,p.y,p.x+p.w-start,p.stair?9:18);
+      for(const hole of [...(p.holes||[])].sort((a,b)=>a.x-b.x)){if(hole.x>start)deck(ctx,start,p.y,hole.x-start,p.stair?9:18);start=Math.max(start,hole.x+hole.w);}
+      if(start<p.x+p.w)deck(ctx,start,p.y,p.x+p.w-start,p.stair?9:18);
     }
   }
   for(const flight of world.stairs){

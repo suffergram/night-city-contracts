@@ -2,6 +2,7 @@ import { skillEffects, validateSkills } from './skills.js';
 import { ACTOR_HEIGHT, weaponDamage } from './weapons.js';
 import {createLayout,LEVEL_KINDS} from './level-layout.js';
 import {createDressing,marketMerchandise} from './dressing.js';
+import {createTowerClutter} from './tower-clutter.js';
 export {LEVEL_KINDS} from './level-layout.js';
 export const GROUND = 538;
 export const BAG_LIMIT = 24;
@@ -110,7 +111,8 @@ export function generateLevel(depth, seed = freshLevelSeed(), kind) {
   delete layout.slots;
   const world={...layout,depth,seed,enemies,chests,kills:0,earned:0};
   world.decor.push(...marketMerchandise(world,GROUND));
-  world.details=createDressing(world,seed,GROUND);return world;
+  if(world.towerArchitecture)world.towerClutter=createTowerClutter(world);
+  world.details=world.towerArchitecture?[]:createDressing(world,seed,GROUND);return world;
 }
 function validItem(item) {
   return item && typeof item.id === 'string' && typeof item.name === 'string' && item.name.length < 80 && Object.hasOwn(SLOTS, item.type) && Number.isInteger(item.power) && item.power >= 0 && item.power < 10000 && [0, 1, 2].includes(item.rarity);
