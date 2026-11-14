@@ -9,6 +9,7 @@ import {drawBuildingAtmosphere} from './building-atmosphere.js';
 import {HOTEL_ATMOSPHERE} from './hotel-atmosphere.js';
 import {buildingLighting,fixtureLight} from './building-light-variation.js';
 import {TOWER_BAYS,drawTowerScene,drawTowerBay,drawTowerArchitecture,drawTowerSceneForeground} from './tower.js';
+import {INDUSTRIAL_BUILDINGS,INDUSTRIAL_STRUCTURES,INDUSTRIAL_LAYERS,drawIndustrialScene} from './industrial.js';
 import {withUnlitBase,drawSpriteEmission} from './sprite-lighting.js';
 import {OBJECT_LIGHTS} from './object-lights.js';
 import {exitStyle} from './exits.js';
@@ -16,6 +17,18 @@ import {drawTransportExit} from './exit-render.js';
 import {lightLevel,controlledLight,ambientGlow,drawLampAtmosphere,drawVentSteam,drawCityTraffic,drawHologram,drawScreenAnimation,drawCookingSteam,drawStallLights,drawHarbourHaze,drawElectricalFault,drawSceneDust,drawWarningBeacon} from './ambient.js';
 
 export const ENVIRONMENT_ASSETS = {
+  industrialWorkshop:new URL('../assets/environment/industrial-workshop-v1.png',import.meta.url).href,
+  industrialWarehouse:new URL('../assets/environment/industrial-warehouse-v1.png',import.meta.url).href,
+  industrialPlant:new URL('../assets/environment/industrial-plant-v1.png',import.meta.url).href,
+  industrialControl:new URL('../assets/environment/industrial-control-v1.png',import.meta.url).href,
+  industrialFar:new URL('../assets/environment/industrial-far-v1.png',import.meta.url).href,
+  industrialFence:new URL('../assets/environment/industrial-fence-v1.png',import.meta.url).href,
+  industrialMid:new URL('../assets/environment/industrial-mid-v1.png',import.meta.url).href,
+  industrialShed:new URL('../assets/environment/industrial-shed-v3.png',import.meta.url).href,
+  industrialScaffold:new URL('../assets/environment/industrial-scaffold-v1.png',import.meta.url).href,
+  industrialFreight:new URL('../assets/environment/industrial-freight-v1.png',import.meta.url).href,
+  industrialFreightFlat:new URL('../assets/environment/industrial-freight-flat-v2.png',import.meta.url).href,
+  industrialWorksite:new URL('../assets/environment/industrial-worksite-flat-v1.png',import.meta.url).href,
   towerResidential:new URL('../assets/environment/tower-residential-v1.png',import.meta.url).href,
   towerResidentialLit:new URL('../assets/environment/tower-residential-lit-v1.png',import.meta.url).href,
   towerHousingGrey:new URL('../assets/environment/tower-housing-grey-v2.png',import.meta.url).href,
@@ -97,6 +110,7 @@ export const HUB_PARALLAX_LAYERS = [
   {...PARALLAX_LAYERS[2]},
 ];
 export function backdropLayers(world=null){
+  if(world?.industrialArchitecture)return INDUSTRIAL_LAYERS;
   return !world?.kind||world.kind==='market'&&world.backdrop==='metropolis'?HUB_PARALLAX_LAYERS:PARALLAX_LAYERS;
 }
 // Frontmost doors are roughly 1.3–1.5 actor heights, rather than embedded in a scaled panorama.
@@ -138,6 +152,15 @@ const CITY_SCREENS={
 export function environmentAssetIds(world=null){
   if(!world)return Object.keys(ENVIRONMENT_ASSETS); // Full atlas preview remains supported.
   const ids=new Set(['props',exitStyle(world).asset]);
+  if(world.industrialArchitecture){
+    for(const id of ['road','propsOff','locations','industrialWorksite','industrialFar','industrialMid','industrialFence'])ids.add(id);
+    for(const d of world.decor){
+      if(d.kind==='industrialBuilding')ids.add(INDUSTRIAL_BUILDINGS[d.style].asset);
+      if(d.kind==='industrialStructure')ids.add(INDUSTRIAL_STRUCTURES[d.style].asset);
+      if(d.kind==='industrialCargo'){ids.add('industrialFreight');ids.add('industrialFreightFlat');}
+    }
+    return [...ids];
+  }
   if(world.towerArchitecture){
     for(const asset of ['propsOff','towerSlab','towerConcrete','towerStair','towerPlant','towerDetails','towerStructure','towerElectrics','towerFacade','towerClutter','towerBasement'])ids.add(asset);
     for(const d of world.decor)if(d.kind==='towerBay'){const asset=TOWER_BAYS[d.style].asset;ids.add(asset);if(ENVIRONMENT_ASSETS[asset+'Lit'])ids.add(asset+'Lit');}
@@ -180,12 +203,13 @@ export async function prepareEnvironment(onProgress=()=>{},world=null){
   const canvas=document.createElement('canvas');canvas.width=canvas.height=128;
   const ctx=canvas.getContext('2d'),tasks=[],required=new Set(environmentAssetIds(world));
   const enqueue=(key,task)=>{if(!preparedEnvironmentTasks.has(key))tasks.push(()=>{task();preparedEnvironmentTasks.add(key);});};
-  for(const [atlas,count]of Object.entries({props:12,locations:16,market:9,life:16,worksite:16})){
+  for(const [atlas,count]of Object.entries({props:12,locations:16,market:9,life:16,worksite:16,industrialWorksite:16})){
     if(!required.has(atlas))continue;
     for(let index=0;index<count;index++)enqueue(atlas+':'+index,()=>{
       const p=prop(index,atlas);if(!p)return;
       drawLights(ctx,p,atlas==='props'?PROP_LIGHTS[index]||[]:OBJECT_LIGHTS[atlas]?.[index]||[],0,0,100,100,0,index,atlas+':'+index);
       for(const def of Object.values(DETAIL_SPRITES))if(def.atlas===atlas&&def.frame===index)detailMaterial(p,def);
+      if(atlas==='industrialWorksite')for(const def of Object.values(DETAIL_SPRITES))if(def.atlas==='worksite'&&def.frame===index)detailMaterial(p,{...def,atlas});
     });
   }
   for(const [style,def]of Object.entries(MARKET_HOTELS))if(required.has(def.asset))enqueue(def.asset,()=>{
@@ -198,6 +222,10 @@ export async function prepareEnvironment(onProgress=()=>{},world=null){
   for(const [style,def]of Object.entries(TOWER_BAYS))if(required.has(def.asset))enqueue(def.asset+':'+(def.index||0),()=>{
     drawTowerBay(ctx,{style,x:0,y:100,w:280,h:112},prop(def.index||0,def.asset),images.get(def.asset+'Lit'),0);
   });
+  for(const def of [...Object.values(INDUSTRIAL_BUILDINGS),...Object.values(INDUSTRIAL_STRUCTURES)])if(required.has(def.asset))enqueue(def.asset,()=>prop(0,def.asset));
+  if(required.has('industrialFence'))enqueue('industrialFence',()=>prop(0,'industrialFence'));
+  if(required.has('industrialFreight'))for(let i=0;i<8;i++)enqueue('industrialFreight:'+i,()=>prop(i,'industrialFreight'));
+  if(required.has('industrialFreightFlat'))for(let i=3;i<8;i++)enqueue('industrialFreightFlat:'+i,()=>prop(i,'industrialFreightFlat'));
   for(const asset of ['towerSlab','towerConcrete','towerStair','towerPlant','towerBasement'])if(required.has(asset))enqueue(asset,()=>prop(0,asset));
   if(required.has('towerCables'))for(let i=0;i<3;i++)enqueue('towerCables:'+i,()=>prop(i,'towerCables'));
   if(required.has('towerElectrics'))for(let i=0;i<3;i++)enqueue('towerElectrics:'+i,()=>prop(i,'towerElectrics'));
@@ -220,8 +248,8 @@ function prop(index,atlas='props') {
   const image = images.get(atlas); if (!image) return null;
   const col = index % 4, row = Math.floor(index / 4);
   const rows=atlas==='props'?3:4;
-  const detailRect=atlas==='towerClutter'?[index%4/4,Math.floor(index/4)/4,.25,.25]:['towerCables','towerElectrics'].includes(atlas)?[0,index/3,1,1/3]:atlas==='towerStructure'?[index/2,0,.5,1]:['towerFacade','towerCommons'].includes(atlas)?[index%2/2,Math.floor(index/2)/2,.5,.5]:atlas==='towerDetails'?[[.14,0,.21,.49],[.46,.15,.54,.265],[0,.54,.49,.46],[.65,.49,.20,.51]][index]:atlas==='towerForeground'?[[.065,.10,.37,.44],[.66,0,.19,.56],[.01,.63,.48,.34],[.51,.63,.49,.29]][index]:null;
-  const cell=detailRect?{x:Math.round(detailRect[0]*image.width),y:Math.round(detailRect[1]*image.height),w:Math.round(detailRect[2]*image.width),h:Math.round(detailRect[3]*image.height)}:atlas==='towerForeground'?{x:index%2*image.width/2,y:Math.floor(index/2)*image.height/2,w:image.width/2,h:image.height/2}:/^(hotel|exit|building|tower)/.test(atlas)?{x:0,y:0,w:image.width,h:image.height}:atlas==='market'?marketCell(index,image.width,image.height):{x:Math.round(col*image.width/4),y:Math.round(row*image.height/rows),w:Math.round((col+1)*image.width/4)-Math.round(col*image.width/4),h:Math.round((row+1)*image.height/rows)-Math.round(row*image.height/rows)};
+  const detailRect=['industrialFreight','industrialFreightFlat'].includes(atlas)?[index%4/4,Math.floor(index/4)/2,.25,.5]:['towerClutter','industrialWorksite'].includes(atlas)?[index%4/4,Math.floor(index/4)/4,.25,.25]:['towerCables','towerElectrics'].includes(atlas)?[0,index/3,1,1/3]:atlas==='towerStructure'?[index/2,0,.5,1]:['towerFacade','towerCommons'].includes(atlas)?[index%2/2,Math.floor(index/2)/2,.5,.5]:atlas==='towerDetails'?[[.14,0,.21,.49],[.46,.15,.54,.265],[0,.54,.49,.46],[.65,.49,.20,.51]][index]:atlas==='towerForeground'?[[.065,.10,.37,.44],[.66,0,.19,.56],[.01,.63,.48,.34],[.51,.63,.49,.29]][index]:null;
+  const cell=detailRect?{x:Math.round(detailRect[0]*image.width),y:Math.round(detailRect[1]*image.height),w:Math.round(detailRect[2]*image.width),h:Math.round(detailRect[3]*image.height)}:atlas==='towerForeground'?{x:index%2*image.width/2,y:Math.floor(index/2)*image.height/2,w:image.width/2,h:image.height/2}:/^(hotel|exit|building|tower|industrial)/.test(atlas)?{x:0,y:0,w:image.width,h:image.height}:atlas==='market'?marketCell(index,image.width,image.height):{x:Math.round(col*image.width/4),y:Math.round(row*image.height/rows),w:Math.round((col+1)*image.width/4)-Math.round(col*image.width/4),h:Math.round((row+1)*image.height/rows)-Math.round(row*image.height/rows)};
   const {x,y,w,h}=cell;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true }); ctx.drawImage(image, x, y, w, h, 0, 0, w, h);
@@ -295,10 +323,16 @@ export function drawRasterBackdrop(ctx, canvas, camera,time=0,world=null,cameraY
       surface = document.createElement('canvas'); surface.width = Math.ceil(width); surface.height = Math.ceil(layer.height);
       const c = surface.getContext('2d'); c.filter = layer.filter;
       c.drawImage(image, 0, 0, surface.width, surface.height); layerSurfaces.set(layer.asset, surface);
+      if(layer.overlap){
+        c.filter='none';c.globalCompositeOperation='destination-in';
+        const mask=c.createLinearGradient(0,0,surface.width,0),edge=layer.overlap/surface.width;
+        mask.addColorStop(0,'#fff0');mask.addColorStop(edge,'#fff');mask.addColorStop(1-edge,'#fff');mask.addColorStop(1,'#fff0');
+        c.fillStyle=mask;c.fillRect(0,0,surface.width,surface.height);c.globalCompositeOperation='source-over';
+      }
     }
     // Bake the distance colour treatment once instead of filtering large PNGs every frame.
     ctx.save(); ctx.globalAlpha = layer.alpha;
-    for (const x of parallaxTiles(camera, canvas.width, width, layer.speed)) {
+    for (const x of parallaxTiles(camera, canvas.width, width-(layer.overlap||0), layer.speed)) {
       if (x + width < 0 || x > canvas.width) continue;
       ctx.drawImage(surface, x, layer.bottom - layer.height, width + 1, layer.height);
       if(layer.asset==='nearCity')drawLights(ctx,{image:surface,x:0,y:0,w:surface.width,h:surface.height},WALL_LIGHTS,
@@ -360,7 +394,7 @@ function detailMaterial(p,def){
       if(!d[i+3])continue;
       const r=d[i],g=d[i+1],b=d[i+2],light=r*.2126+g*.7152+b*.0722;
       const emission=Math.max(r,g,b)>150&&b>110&&Math.max(r,g,b)-Math.min(r,g,b)>60;
-      const gain=emission?.96:def.atlas==='worksite'?.72:.80,saturation=emission?.9:.65;
+      const gain=emission?.96:['worksite','industrialWorksite'].includes(def.atlas)?.72:.80,saturation=emission?.9:.65;
       for(let channel=0;channel<3;channel++)d[i+channel]=(light+(d[i+channel]-light)*saturation)*gain*[.96,1,1.02][channel];
     }
     x.putImageData(pixels,0,0);detailMaterials.set(key,c);
@@ -373,16 +407,19 @@ function drawDetails(ctx,canvas,world,camera,time,kind=world.kind,cameraY=0){
     let cached=detailLayouts.get(world);if(!cached){cached={};detailLayouts.set(world,cached);}
     details=cached[kind] ||= createDressing(world,731,GROUND,kind);
   }
-  for(const d of details){
+  for(const original of details){
+    let d=original;
     if(d.x+d.w<camera-20||d.x>camera+canvas.width+20||d.y+d.h<cameraY-100||d.y>cameraY+canvas.height+100)continue;
-    const def=DETAIL_SPRITES[d.sprite],p=prop(def.frame,def.atlas);if(!p)continue;
+    const base=DETAIL_SPRITES[d.sprite],flat=world.industrialArchitecture&&base.atlas==='worksite';
+    const def=flat?{...base,atlas:'industrialWorksite'}:base,p=prop(def.frame,def.atlas);if(!p)continue;
+    if(flat)d={...d,...fitScenery(p.w,p.h,d.x,d.y,d.w,d.h)};
     const material=detailMaterial(p,def);
-    const y=d.y+(d.wall?0:1+p.contactInset*d.h/p.h);
+    const y=d.y+(d.wall?0:flat?0:1+p.contactInset*d.h/p.h);
     ctx.save();
     if(!d.wall){
       ctx.fillStyle='#03080b50';ctx.beginPath();ctx.ellipse(d.x+d.w/2,d.floorY-.5,d.w*.42,1.5,0,0,Math.PI*2);ctx.fill();
     }
-    const lights=OBJECT_LIGHTS[def.atlas]?.[def.frame]||[];
+    const lights=flat?[]:OBJECT_LIGHTS[def.atlas]?.[def.frame]||[];
     if(d.mirror){ctx.translate(d.x+d.w,y);ctx.scale(-1,1);ctx.drawImage(material,0,0,p.w,p.h,0,0,d.w,d.h);drawLights(ctx,p,lights,0,0,d.w,d.h,time,d.x,def.atlas+':'+def.frame);}
     else{ctx.drawImage(material,0,0,p.w,p.h,d.x,y,d.w,d.h);drawLights(ctx,p,lights,d.x,y,d.w,d.h,time,d.x,def.atlas+':'+def.frame);}
     ctx.restore();
@@ -453,6 +490,14 @@ function drawDeck(ctx,x,y,w,h){
   for(let xx=x;xx<x+w;xx+=tileWidth){const width=Math.min(tileWidth,x+w-xx);ctx.drawImage(p.image,p.x,p.y,p.w*width/tileWidth,p.h,xx,y,width,h);}
 }
 function drawLocation(ctx,canvas,world,camera,time,cameraY=0){
+  if(world.industrialArchitecture){
+    drawRoad(ctx,canvas,camera);
+    drawIndustrialScene(ctx,canvas,world,camera,cameraY,time,towerSource);
+    drawDetails(ctx,canvas,world,camera,time,world.kind,cameraY);
+    drawTransportExit(ctx,world,'expedition',time,prop(0,exitStyle(world).asset));
+    for(const c of world.chests){ctx.save();if(c.open)ctx.globalAlpha=.45;drawProp(ctx,6,c.x,c.y+25,36,25,time);ctx.restore();}
+    return true;
+  }
   if(world.towerArchitecture){
     drawTowerArchitecture(ctx,canvas,world,camera,cameraY,time,towerSource,towerImage);
     for(const c of world.chests){ctx.save();if(c.open)ctx.globalAlpha=.45;drawProp(ctx,6,c.x,c.y+25,36,25,time);ctx.restore();}

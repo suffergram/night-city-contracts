@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { GROUND, BAG_LIMIT, BALANCE, SLOTS, DEFAULT_PROFILE, stats, random, generateLevel, makeItem, loadProfile, addXp, recommendedDepth, enemyReward, trainingCost } from '../src/world.js';
 import {MARKET_HOTELS,hotelSize,hotelSink} from '../src/market-hotels.js';
 import {physics} from '../src/combat.js';
+import {INDUSTRIAL_BUILDINGS,INDUSTRIAL_STRUCTURES,INDUSTRIAL_CARGO} from '../src/industrial.js';
+import {exitBounds} from '../src/exits.js';
 
 function walkableNodes(world) {
   return world.platforms.flatMap(p=>{
@@ -86,6 +88,40 @@ test('market hotels are complete ground-standing buildings with reachable balcon
   }
   assert.ok(count>=60);assert.equal(variants.size,3);
 });
+test('industrial yards have grounded native-scale factory buildings with accessible galleries and roofs',()=>{
+  const arrangements=new Set();
+  for(let seed=1;seed<=60;seed++){
+    const w=generateLevel(2,seed,'industrial'),buildings=w.decor.filter(d=>d.kind==='industrialBuilding');
+    assert.equal(w.industrialArchitecture,true);assert.equal(w.lamps.length,0);assert.ok(buildings.length>=2);
+    assert.ok(new Set(buildings.map(d=>d.style)).size>=2);
+    for(const type of ['shed','cargo','scaffold'])assert.ok(w.industrialSections.some(s=>s.type===type));
+    for(const index of [2,3,4])assert.ok(w.decor.some(d=>d.kind==='industrialCargo'&&d.index===index));
+    for(const d of w.decor.filter(d=>d.kind==='industrialCargo'&&d.index>1))assert.equal(d.y+d.h,GROUND);
+    for(const d of w.decor.filter(d=>d.kind==='industrialStructure')){
+      const def=INDUSTRIAL_STRUCTURES[d.style];assert.equal(d.y+d.h,GROUND);
+      assert.ok(Math.abs(d.w/d.h-def.size[0]/def.size[1])<1e-8);
+      const roof=w.platforms.find(p=>p.id===d.roofId);assert.equal(roof.y,Math.round(d.y+d.h*def.roof));
+      assert.ok(w.connections.some(c=>c.upper.y===roof.y&&c.upper.x>d.x&&c.upper.x<d.x+d.w));
+    }
+    for(const d of w.decor.filter(d=>d.kind==='industrialCargo')){
+      const def=INDUSTRIAL_CARGO[d.index];assert.ok(Math.abs(d.w/d.h-def.size[0]/def.size[1])<1e-8);
+      if(d.index<2)assert.ok(w.platforms.some(p=>p.art==='industrialContainer'&&p.x===d.x&&p.y===Math.round(d.y)));
+    }
+    arrangements.add(JSON.stringify(buildings.map(d=>[d.style,d.x])));
+    for(const d of buildings){
+      const def=INDUSTRIAL_BUILDINGS[d.style],gallery=w.platforms.find(p=>p.id===d.galleryId),roof=w.platforms.find(p=>p.id===d.roofId);
+      assert.equal(d.y+d.h,GROUND);assert.ok(Math.abs(d.w/d.h-def.size[0]/def.size[1])<1e-8);
+      assert.equal(gallery.y,Math.round(d.y+d.h*def.gallery));assert.equal(roof.y,Math.round(d.y+d.h*def.roof));
+      assert.ok(roof.y<gallery.y&&gallery.y<GROUND);
+      assert.ok(w.ladders.some(l=>l.bottom===GROUND&&l.top===gallery.y&&l.x>d.x&&l.x<d.x+d.w));
+      assert.ok(w.ladders.some(l=>l.bottom===gallery.y&&l.top===roof.y&&l.x>d.x&&l.x<d.x+d.w));
+      const exit=exitBounds(w);assert.ok(exit.x+exit.w<=d.x||exit.x>=d.x+d.w,'transport remains in a service yard');
+    }
+    assert.ok(w.details.every(d=>d.floorY===GROUND));
+  }
+  assert.ok(arrangements.size>=55);
+});
+
 test('megatower has continuous architectural bays and physical staircase flights',()=>{
   for(let seed=1;seed<=30;seed++){
     const w=generateLevel(1,seed,'megablock');assert.equal(w.lamps.length,0);

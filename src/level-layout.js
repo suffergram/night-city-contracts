@@ -4,6 +4,7 @@ import {MARKET_HOTELS,hotelSize,hotelSink} from './market-hotels.js';
 import {EXIT_STYLES,streetExit} from './exits.js';
 import {MARKET_BUILDINGS,MARKET_BUILDING_WALLS,marketBuildingSize,marketBuildingSink} from './market-buildings.js';
 import {TOWER_ARCH,TOWER_BAYS,towerStairGeometry} from './tower.js';
+import {INDUSTRIAL_BUILDINGS,INDUSTRIAL_STRUCTURES,industrialSize,industrialCargoSize} from './industrial.js';
 export const LEVEL_KINDS={
   industrial:{name:'Промзона Уотсона',hint:'Технические площадки и переходы'},
   port:{name:'Грузовой порт',hint:'Контейнеры, краны и грузовые мостки'},
@@ -13,10 +14,10 @@ export const LEVEL_KINDS={
 export function createLayout(rng,ground,forcedKind) {
   const pick=a=>a[Math.floor(rng()*a.length)],integer=(a,b)=>a+Math.floor(rng()*(b-a+1));
   const kind=forcedKind&&LEVEL_KINDS[forcedKind]?forcedKind:pick(Object.keys(LEVEL_KINDS));
-  const width=kind==='megablock'?TOWER_ARCH.width:kind==='market'?integer(34,48)*100:integer(24,39)*100;
+  const width=kind==='megablock'?TOWER_ARCH.width:kind==='market'?integer(34,48)*100:kind==='industrial'?integer(36,48)*100:integer(24,39)*100;
   const layout={kind,width,platforms:[{id:0,x:0,y:ground,w:width,h:150,ground:true}],ladders:[],stairs:[],connections:[],decor:[],rooms:[],lamps:[],wallLights:[]};
   const surface=(x,y,w,extra={})=>{
-    const native=['stall','hotelBalcony','hotelRoof','buildingGallery','buildingRoof'].includes(extra.art);
+    const native=['stall','hotelBalcony','hotelRoof','buildingGallery','buildingRoof','industrialGallery','industrialRoof','industrialContainer'].includes(extra.art);
     x=Math.max(24,native?x:Math.round(x));w=Math.min(native?w:Math.round(w),width-24-x);
     const p={id:layout.platforms.length,x,y:Math.round(y),w,h:18,...extra};layout.platforms.push(p);return p;
   };
@@ -184,6 +185,43 @@ export function createLayout(rng,ground,forcedKind) {
       layout.marketBlocks.push({id:group,x:blockStart,w:x-blockStart,anchor:anchorStyle,buildings:anchors.map(a=>a.style)});
       x+=integer(85,155);group++;
     }
+  }else if(kind==='industrial'){
+    layout.industrialArchitecture=true;
+    const styles=Object.keys(INDUSTRIAL_BUILDINGS);
+    for(let i=styles.length-1;i>0;i--){const j=integer(0,i);[styles[i],styles[j]]=[styles[j],styles[i]];}
+    const plan=['building','building','shed','cargo','scaffold'];
+    for(let i=plan.length-1;i>0;i--){const j=integer(0,i);[plan[i],plan[j]]=[plan[j],plan[i]];}
+    layout.industrialSections=[];
+    let x=integer(255,280),index=0,section=0;
+    const cargo=(frame,px,feet)=>{const size=industrialCargoSize(frame),d={kind:'industrialCargo',index:frame,x:px,y:feet-size.h,...size};layout.decor.push(d);return d;};
+    while(section<9){
+      const type=plan[section]||pick(['building','cargo','shed']);
+      const style=type==='building'?styles[index%styles.length]:type;
+      const size=type==='cargo'?{w:Math.max(420,Math.max(industrialCargoSize(0).w,industrialCargoSize(1).w)*2+24),h:160}:industrialSize(style);
+      if(x+size.w>width-255)break;
+      layout.industrialSections.push({type,x,w:size.w});
+      if(type==='cargo'){
+        const first=cargo(integer(0,1),x+4,ground),second=cargo(integer(0,1),x+first.w+10,ground);
+        const bases=[first,second],baseRoofs=bases.map(d=>surface(d.x,d.y,d.w,{art:'industrialContainer'}));
+        const stack=integer(0,1),upper=cargo(integer(0,1),bases[stack].x,bases[stack].y);
+        const top=surface(upper.x,upper.y,upper.w,{art:'industrialContainer'});
+        ladder(layout.platforms[0],baseRoofs[1-stack],bases[1-stack].x+18);
+        ladder(baseRoofs[stack],top,upper.x+upper.w-18);
+        cargo(2,x+235,ground);cargo(4,x+345,ground);cargo(3,x+135,ground);
+      }else{
+        const def=INDUSTRIAL_BUILDINGS[style]||INDUSTRIAL_STRUCTURES[style],y=ground-size.h;
+        const gallery=def.gallery!=null?surface(x+size.w*.025,y+size.h*def.gallery,size.w*.95,{art:'industrialGallery'}):null;
+        const roof=surface(x+size.w*.025,y+size.h*def.roof,size.w*.95,{art:'industrialRoof'});
+        layout.decor.push({kind:type==='building'?'industrialBuilding':'industrialStructure',style,x,y,...size,galleryId:gallery?.id,roofId:roof.id,
+          lightSeed:integer(1,1000000),lampModes:def.lamps.map(()=>pick(['steady','steady','steady',false,'off']))});
+        ladder(layout.platforms[0],gallery||roof,x+size.w*def.ladder);
+        if(gallery)ladder(gallery,roof,x+size.w*(1-def.ladder));
+        if(type==='building')index++;
+        if(type==='scaffold'){cargo(pick([5,7]),x+size.w*.1,ground);cargo(3,x+size.w*.65,ground);}
+        if(type==='shed'){cargo(4,x+size.w*.62,ground);cargo(6,x+size.w*.1,ground);}
+      }
+      section++;x+=size.w+(type==='building'&&plan[section]==='building'&&rng()<.65?-2:integer(25,65));
+    }
   }else{
     for(let x=300;x<width-280;x+=integer(220,340)){
       const p=surface(x,ground-pick([85,110,130]),integer(135,225),{deck:true});
@@ -212,7 +250,7 @@ export function createLayout(rng,ground,forcedKind) {
   const exitHalf=EXIT_STYLES[kind].w/2;
   layout.portal=exit?{x:exit.x+exitHalf+rng()*Math.max(0,exit.w-exitHalf*2),y:exit.y}:streetExit(layout,ground,rightStart,rng);
   layout.decor=layout.decor.filter(d=>{
-    if(d.kind==='towerBay')return true;
+    if(d.kind==='towerBay'||['industrialBuilding','industrialStructure','industrialCargo'].includes(d.kind))return true;
     if(d.kind==='crane'||['container','foodStall','techStall','clothesStall','marketHotel','marketBuilding'].includes(d.kind))return true;
     return d.y!==layout.portal.y||d.x+d.w<layout.portal.x-exitHalf-10||d.x>layout.portal.x+exitHalf+10;
   });
@@ -234,6 +272,8 @@ export function createLayout(rng,ground,forcedKind) {
     for(let i=fixtures.length-1;i>0;i--){const j=integer(0,i);[fixtures[i],fixtures[j]]=[fixtures[j],fixtures[i]];}
     const off=Math.round(fixtures.length*.5),steady=Math.round(fixtures.length*.4);
     fixtures.forEach(([d,i],index)=>{d.towerLampModes[i]=index<off?'off':index<off+steady?'steady':false;});
+  }else if(kind==='industrial'){
+    // Wall fixtures and roof beacons belong to the industrial facades.
   }else{
     for(let x=integer(150,250);x<width-90;x+=integer(420,600))layout.lamps.push({x,y:ground});
     if(kind==='market')layout.lamps=layout.lamps.filter(l=>!layout.decor.some(d=>['marketHotel','marketBuilding'].includes(d.kind)&&l.x>d.x-15&&l.x<d.x+d.w+15));
