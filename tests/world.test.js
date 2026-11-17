@@ -181,7 +181,7 @@ test('all eight item slots generate and loot rarity is deliberately scarce', () 
   let rare = 0, legendary = 0; const rng = random(99);
   for (let i = 0; i < 10000; i++) { const item = makeItem(1, rng); if (item.rarity === 1) rare++; if (item.rarity === 2) legendary++; }
   assert.ok(rare < 1400); assert.ok(legendary < 230);
-  assert.equal(BALANCE.killDrop, .06); assert.ok(BALANCE.cacheDrop < .3);
+  assert.ok(BALANCE.killDrop <= .03); assert.ok(BALANCE.cacheDrop < .2);
 });
 test('v3 saves gain the two new weapon slots without losing skills, money or existing items', () => {
   const old = structuredClone(DEFAULT_PROFILE); old.version = 3; old.gold = 321; old.level = 4; old.skills = { blades: 2 };

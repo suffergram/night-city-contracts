@@ -1,3 +1,4 @@
+import {contractReady} from './contracts.js';
 import {exitStyle,exitBounds} from './exits.js';
 import {fitScenery} from './scenery-sizes.js';
 import {ambientGlow,lightLevel,controlledLight,drawVentSteam} from './ambient.js';
@@ -34,7 +35,7 @@ function drawVehicleExhaust(ctx,x,y,time,seed,size){
   ctx.restore();
 }
 function drawParkedVehicle(ctx,world,mode,time,source,style,fit){
-  const {x,y,w,h}=fit,ready=mode==='hub'||world.enemies&&world.kills===world.enemies.length;
+  const {x,y,w,h}=fit,ready=mode==='hub'||world.enemies&&contractReady(world);
   const level=lightLevel(time,world.portal.x),colour=ready?'#6fe2c7':'#e76b58';
   ctx.save();
   // Source vehicles face right; mirror the full vehicle and its effects at left exits.
@@ -79,7 +80,7 @@ export function drawTransportExit(ctx,world,mode,time,source){
   const fit=source?fitScenery(source.w,source.h,bounds.x,bounds.y,bounds.w,bounds.h):bounds;
   const {x,w,h}=fit,y=fit.y+(source?1+source.contactInset*h/source.h:0);
   if(style.vehicle){drawParkedVehicle(ctx,world,mode,time,source,style,fit);return;}
-  const ready=mode==='hub'||world.enemies&&world.kills===world.enemies.length;
+  const ready=mode==='hub'||world.enemies&&contractReady(world);
   const progress=doorProgress(world,!!ready,time),[ux,uy,uw,uh]=style.door;
   const dx=x+ux*w,dy=y+uy*h,dw=uw*w,dh=uh*h;
   ctx.save();

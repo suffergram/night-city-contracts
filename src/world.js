@@ -1,3 +1,5 @@
+import {validateCampaign} from './campaign.js';
+import {gearDamage,gearArmor,assignTrait} from './gear.js';
 import { skillEffects, validateSkills } from './skills.js';
 import { ACTOR_HEIGHT, weaponDamage } from './weapons.js';
 import {createLayout,LEVEL_KINDS} from './level-layout.js';
@@ -7,7 +9,7 @@ export {LEVEL_KINDS} from './level-layout.js';
 export const GROUND = 538;
 export const BAG_LIMIT = 24;
 export const SLOTS = { weapon: 'Катана', gun: 'Пистолет', rifle: 'Автомат', shotgun: 'Дробовик', head: 'Голова', torso: 'Куртка', legs: 'Брюки', feet: 'Обувь' };
-export const BALANCE = { killDrop: .06, cacheDrop: .28, potionCost: 35, magazine: 10, reload: 1.5, rollCost: 28, meleeCost: 9 };
+export const BALANCE = { killDrop: .02, cacheDrop: .12, potionCost: 35, magazine: 10, reload: 1.5, rollCost: 28, meleeCost: 9 };
 const starter = (type, name, power) => ({ id: `starter-${type}`, type, name, rarity: 0, power });
 export const DEFAULT_PROFILE = {
   version: 4, gold: 60, xp: 0, level: 1, strength: 0, vitality: 0, potions: 3, best: 0, threat: 1, skills: {}, activeWeapon: 'weapon',
@@ -26,15 +28,15 @@ export function stats(profile) {
   const power=offensivePower(profile);
   return {
     maxHp: 100 + level * 6 + profile.vitality * 10 + (perks.hp || 0),
-    damage: weaponDamage('weapon',power.damage),
-    gunDamage: e.gun ? weaponDamage('gun',power.gunDamage) : 0,
-    rifleDamage: e.rifle ? weaponDamage('rifle',power.rifleDamage) : 0,
-    shotgunDamage: e.shotgun ? weaponDamage('shotgun',power.shotgunDamage) : 0,
-    armor: ['head', 'torso', 'legs', 'feet'].reduce((sum, slot) => sum + (e[slot]?.power || 0), 0) + (perks.armor || 0),
+    damage: Math.round(weaponDamage('weapon',power.damage)*gearDamage(e.weapon)),
+    gunDamage: e.gun ? Math.round(weaponDamage('gun',power.gunDamage)*gearDamage(e.gun)) : 0,
+    rifleDamage: e.rifle ? Math.round(weaponDamage('rifle',power.rifleDamage)*gearDamage(e.rifle)) : 0,
+    shotgunDamage: e.shotgun ? Math.round(weaponDamage('shotgun',power.shotgunDamage)*gearDamage(e.shotgun)) : 0,
+    armor: ['head', 'torso', 'legs', 'feet'].reduce((sum, slot) => sum + gearArmor(e[slot]), 0) + (perks.armor || 0),
     maxStamina: 100 + profile.vitality * 3 + (perks.stamina || 0),
     staminaRegen: 24 + (perks.staminaRegen || 0), meleeCost: BALANCE.meleeCost - (perks.meleeSaving || 0),
     rollCost: BALANCE.rollCost - (perks.rollSaving || 0), reloadTime: BALANCE.reload - (perks.reloadSaving || 0),
-    healing: 45 + (perks.healing || 0), healCooldown: 8 - (perks.healCooldownSaving || 0),
+    healing: Math.max(45,Math.round((100+level*6+profile.vitality*10+(perks.hp||0))*.40)) + (perks.healing || 0), healCooldown: 8 - (perks.healCooldownSaving || 0),
     fireInterval: .32 - (perks.fireSaving || 0), blockCostMultiplier: 1 - (perks.blockSaving || 0),
     perks,
     nextXp: 320 + level * 110 + level * level * 25,
@@ -73,8 +75,8 @@ export function makeItem(depth, rng = Math.random, forcedType) {
     feet: ['Ботинки соло', 'Кроссовки с усилением', 'Тактические берцы'],
   };
   const weapon = ['weapon', 'gun', 'rifle', 'shotgun'].includes(type);
-  const power = (type === 'gun' ? 8 : weapon ? 4 : type === 'torso' ? 2 : 1) + Math.floor(depth * (weapon ? .8 : .35)) + rarity * (weapon ? 3 : 1) + Math.floor(rng() * 2);
-  return { id: `${Date.now()}-${Math.floor(rng() * 1e9)}`, type, rarity, power, name: names[type][Math.floor(rng() * names[type].length)] };
+  const power = (type === 'gun' ? 8 : weapon ? 4 : type === 'torso' ? 2 : 1) + Math.floor(Math.max(0,depth-1)/4) * (weapon ? 3 : 1) + rarity * (weapon ? 3 : 1) + Math.floor(rng() * 2);
+  return assignTrait({ id: `${Date.now()}-${Math.floor(rng() * 1e9)}`, type, rarity, power, name: names[type][Math.floor(rng() * names[type].length)] },rng);
 }
 export function itemValue(item) { return 10 + item.power * 2 + item.rarity * 15; }
 export function buyPrice(item) { return itemValue(item) * 4; }
@@ -143,10 +145,20 @@ export function loadProfile(raw) {
       p.xp = Math.min(p.xp, stats(p).nextXp - 1);
     }
     p.skills = validateSkills(value.skills, p.level);
+    if(value.workshop&&typeof value.workshop==='object')p.workshop={equipment:value.workshop.equipment===true,built:value.workshop.built===true&&value.workshop.equipment===true,empReady:value.workshop.empReady===true&&value.workshop.built===true,mod:['standard','duplex','slug','siphon'].includes(value.workshop.mod)?value.workshop.mod:'standard',operations:Number.isSafeInteger(value.workshop.operations)?Math.max(0,Math.min(1e6,value.workshop.operations)):0};
+    if(p.workshop){
+      const count=value.workshop.samples;
+      p.workshop.samples=Number.isSafeInteger(count)&&count>=0?Math.min(count,1e6):p.workshop.operations;
+      p.workshop.researched=Array.isArray(value.workshop.researched)?[...new Set(value.workshop.researched.filter(id=>['duplex','slug','siphon','projector'].includes(id)))]:p.workshop.built?['duplex','slug']:[];
+      p.workshop.gadget=value.workshop.gadget==='decoy'&&p.workshop.researched.includes('projector')?'decoy':'emp';
+      p.workshop.decoyReady=value.workshop.decoyReady===true&&p.workshop.researched.includes('projector');
+      if(p.workshop.mod!=='standard'&&!p.workshop.researched.includes(p.workshop.mod))p.workshop.mod='standard';
+    }
     if (['weapon', 'gun', 'rifle', 'shotgun'].includes(value.activeWeapon)) p.activeWeapon = value.activeWeapon;
     for (const item of [p.equipment.weapon, ...p.bag.filter(item => item.type === 'weapon')]) {
       if (item && !item.name.startsWith('Катана')) item.name = `Катана «Архив»`;
     }
+    p.campaign=validateCampaign(value.campaign,{sabotage:p.workshop?.equipment===true,prototype:(p.workshop?.operations||0)>0});
     p.threat = recommendedDepth(p);
     return p;
   } catch { return fresh(); }

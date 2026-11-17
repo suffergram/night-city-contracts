@@ -6,6 +6,7 @@
   <title>Night City Contracts</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="cyberpunk.css"><link rel="stylesheet" href="fullscreen.css"><link rel="stylesheet" href="merchant.css">
   <link rel="stylesheet" href="cheats.css">
   <link rel="stylesheet" href="loading.css">
+  <link rel="stylesheet" href="interface.css">
 </head>
 <body>
   <div id="loading-screen" class="loading-screen" role="status" aria-live="polite" aria-label="Загрузка игры"><section class="loading-card"><small>NIGHT CITY CONTRACTS / СВЯЗЬ</small><h2>Подключение к Найт-Сити</h2><progress max="100" value="0" aria-label="Прогресс загрузки"></progress><div class="loading-status"><span data-stage>Загрузка ресурсов…</span><b data-percent>0%</b></div><button hidden>Повторить загрузку</button></section></div>
@@ -18,7 +19,7 @@
         <div class="canvas-wrap">
           <canvas id="game" width="1200" height="660" tabindex="0" aria-label="WASD — движение, 1–4 — выбрать оружие, ЛКМ — атака, ПКМ — блок, Shift — перекат, E — действие."></canvas>
           <div class="scene-badge"><span id="scene-icon">⌂</span><div><strong id="badge-title">Убежище H10</strong><small id="badge-subtitle">Связь установлена</small></div></div>
-          <div class="combat-readout"><span id="combat-state">БОЕВОЙ ИНТЕРФЕЙС</span><small id="weapon-label">Катана</small><strong id="ammo-label">КАТАНА / ЛКМ</strong></div>
+          <div class="combat-readout"><span id="combat-state">БОЕВОЙ ИНТЕРФЕЙС</span><small id="weapon-label">Катана</small><strong id="ammo-label">КАТАНА / ЛКМ</strong><small id="gadget-readout"></small></div>
           <div id="interaction" class="interaction hidden"></div><div id="toast" class="toast hidden" role="status"></div><div id="overlay" class="overlay hidden"></div>
           <div class="touch-controls"><button data-key="a" aria-label="Влево">◀</button><button data-key="d" aria-label="Вправо">▶</button><button data-key="w" aria-label="Прыжок">↑</button><span></span><button data-key="q" aria-label="Медгель">✚</button><button data-key="e" aria-label="Действие">E</button><button data-key="shift" aria-label="Перекат">↔</button><button data-key="k" aria-label="Блок">◇</button><button data-key="j" aria-label="Атака выбранным оружием">◎</button></div>
         </div>

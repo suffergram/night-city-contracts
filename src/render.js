@@ -1,3 +1,9 @@
+import {contractReady,drawContractNodes} from './contracts.js';
+import {drawSecurity} from './workshop.js';
+import {ENEMY_VARIANTS,shieldActive} from './enemy-variants.js';
+import {drawSignal} from './signal.js';
+import {drawDecoy} from './decoy.js';
+import {drawCommander} from './commander.js';
 import { GROUND } from './world.js';
 import { drawMercenary } from './character.js';
 import { skillEffects } from './skills.js';
@@ -35,11 +41,31 @@ export function drawWorld(ctx, canvas, state) {
   for (const e of world.enemies) {
     if (e.dead || e.x < camera - 100 || e.x > camera + W + 100||e.y<cameraY-120||e.y>cameraY+H+100) continue;
     if (e.state === 'windup' && e.role === 'gunner') { ctx.setLineDash([5, 5]); line(e.x + e.w / 2, e.y + 20, e.aimX, e.aimY, '#ff486a99'); ctx.setLineDash([]); }
-    actor(e.x, e.y, e.facing, e.role, e);
+    if(e.turret){
+      rect(e.x-5,e.y+26,42,8,'#38434a');rect(e.x+9,e.y+12,14,16,'#687078');
+      rect(e.x,e.y,32,17,'#414e59');line(e.x+16,e.y+8,e.x+16+e.facing*29,e.y+8,'#9ca7a4',5);
+      glow(e.x+16,e.y+5,13,e.powerOff||e.disabledFor>0?'#6ae5e033':'#ff4f6555');
+      rect(e.x+12,e.y+3,7,3,e.powerOff||e.disabledFor>0?'#58716c':'#ff6172');
+    }else actor(e.x, e.y, e.facing, e.role, e);
+    drawCommander(ctx,e);
+    if(e.variant==='shield'){
+      const sx=e.x+e.w/2+e.facing*19;
+      ctx.save();ctx.strokeStyle=shieldActive(e)?'#6ee9eb':'#66746f';ctx.lineWidth=shieldActive(e)?3:1;
+      ctx.beginPath();ctx.moveTo(sx,e.y+6);ctx.lineTo(sx+e.facing*5,e.y+25);ctx.lineTo(sx,e.y+e.h-4);ctx.stroke();ctx.restore();
+    }
+    if(e.variant&&!e.commander){text(ENEMY_VARIANTS[e.variant].name.toUpperCase(),e.x+e.w/2,e.y-(scanner?42:29),8,e.variant==='sniper'?'#ffb466':'#6ee9eb');}
+    if(e.variant==='sniper'&&e.state==='windup'){
+      ctx.save();ctx.strokeStyle=e.timer<=.65?'#ff694f':'#eabb7488';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(e.aimX,e.aimY,e.timer<=.65?10:15,0,Math.PI*2);ctx.stroke();ctx.restore();
+    }
     if (scanner) text(`${({ gunner: 'СТРЕЛОК', runner: 'САМУРАЙ', heavy: 'ШТУРМ' })[e.role]} ${Math.ceil(e.hp)}/${e.maxHp} / ${e.state === 'recover' ? 'УЯЗВИМ' : e.state === 'windup' ? 'АТАКА' : 'ПОИСК'}`, e.x + e.w / 2, e.y - 26, 8, '#6aefec');
-    if (e.state === 'windup') text(e.role === 'gunner' ? 'ПРИЦЕЛ' : '!', e.x + e.w / 2, e.y - 14, 11, '#ff5d68');
-    if (e.hp < e.maxHp) { rect(e.x - 3, e.y - 6, e.w + 6, 3, '#232b44'); rect(e.x - 3, e.y - 6, (e.w + 6) * Math.max(0, e.hp / e.maxHp), 3, '#ff6976'); }
+    if (e.state === 'windup'&&!e.commander) text(e.role === 'gunner' ? 'ПРИЦЕЛ' : '!', e.x + e.w / 2, e.y - 14, 11, '#ff5d68');
+    if (e.hp < e.maxHp&&!e.commander) { rect(e.x - 3, e.y - 6, e.w + 6, 3, '#232b44'); rect(e.x - 3, e.y - 6, (e.w + 6) * Math.max(0, e.hp / e.maxHp), 3, '#ff6976'); }
   }
+  drawContractNodes(ctx,world,time);
+  drawSecurity(ctx,world);
+  drawSignal(ctx,world,time);
+  drawDecoy(ctx,world,time);
+  if(world.empPulse?.time>0){ctx.save();ctx.globalAlpha=world.empPulse.time*1.5;ctx.strokeStyle='#6ae5ef';ctx.lineWidth=3;ctx.beginPath();ctx.arc(world.empPulse.x,world.empPulse.y,320*(1-world.empPulse.time/.5),0,Math.PI*2);ctx.stroke();ctx.restore();}
   actor(p.x, p.y, p.facing, 'hero', p);
   if(mode!=='hub'&&(p.climbing!=null||findLadder(p,world)))text('W / S · ЛЕСТНИЦА',p.x+p.w/2,p.y-16,8,'#a5f4e4');
   if (mouse.active && canAim(p)) {
@@ -80,6 +106,9 @@ export function drawMinimap(ctx, canvas, world, player) {
   for(const p of world.platforms){ctx.beginPath();ctx.moveTo(px(p.x),py(p.y));ctx.lineTo(px(p.x+p.w),py(p.y));ctx.stroke();}
   ctx.strokeStyle='#b4a563';for(const l of world.ladders||[]){ctx.beginPath();ctx.moveTo(px(l.x),py(l.top));ctx.lineTo(px(l.x),py(l.bottom));ctx.stroke();}
   ctx.strokeStyle='#99aa8f';for(const c of world.connections||[])if(c.kind==='stairwell'){ctx.beginPath();ctx.moveTo(px(c.lower.x),py(c.lower.y));ctx.lineTo(px(c.upper.x),py(c.upper.y));ctx.stroke();}
-  ctx.fillStyle=world.kills===world.enemies.length?'#65f5bb':'#f65b80';ctx.fillRect(px(world.portal.x)-2,py(world.portal.y??GROUND)-3,4,4);
+  for(const n of world.sabotageNodes||[]){ctx.fillStyle=n.disabled?'#617e70':'#f4d65d';ctx.fillRect(px(n.x)-3,py(n.y)-5,6,5);}
+  if(world.signal){ctx.fillStyle=world.signal.done?'#73e8b4':'#f4d65d';ctx.fillRect(px(world.signal.x)-3,py(world.signal.y)-5,6,5);}
+  for(const n of [world.powerSwitch,world.package])if(n&&!n.taken){ctx.fillStyle=n.disabled?'#617e70':'#f4d65d';ctx.fillRect(px(n.x)-3,py(n.y)-5,6,5);}
+  ctx.fillStyle=contractReady(world)?'#65f5bb':'#f65b80';ctx.fillRect(px(world.portal.x)-2,py(world.portal.y??GROUND)-3,4,4);
   ctx.fillStyle='#75eef2';ctx.fillRect(px(player.x+player.w/2)-2,py(player.y+player.h)-3,4,4);ctx.restore();
 }

@@ -1,3 +1,10 @@
+import * as skillUI from '../src/skill-ui.js';
+import * as gearUI from '../src/gear-ui.js';
+import * as menuUI from '../src/menu-ui.js';
+import * as commander from '../src/commander.js';
+import * as decoy from '../src/decoy.js';
+import * as signal from '../src/signal.js';
+import * as campaign from '../src/campaign.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -13,6 +20,10 @@ import { preloadEnvironment } from '../src/environment.js';
 import * as weapons from '../src/weapons.js';
 import * as aiming from '../src/aim.js';
 import * as stairwells from '../src/stairwells.js';
+import * as gear from '../src/gear.js';
+import * as workshop from '../src/workshop.js';
+import * as contracts from '../src/contracts.js';
+import * as variants from '../src/enemy-variants.js';
 
 async function boot(saved) {
   const gradient = { addColorStop() {} };
@@ -28,17 +39,114 @@ async function boot(saved) {
     }); return elements.get(id);
   };
   const storage = new Map(saved ? [['emberfall-save-v1', saved]] : []);
-  const context = vm.createContext({ ...worldModule, ...combat, ...skills, ...weapons, ...aiming, ...stairwells, mercenarySvg, advanceAnimation, animationInfo, preloadEnvironment, preloadSprites, previewMarkup, paintPreviews, muzzleAnchor, drawWorld, drawMinimap, console, Math, JSON, Date, structuredClone,
+  const context = vm.createContext({ ...worldModule, ...combat, ...skills, ...weapons, ...aiming, ...stairwells, ...gear, ...workshop, ...contracts, ...variants, ...campaign, ...signal, ...decoy, ...commander, ...menuUI, ...gearUI, ...skillUI, mercenarySvg, advanceAnimation, animationInfo, preloadEnvironment, preloadSprites, previewMarkup, paintPreviews, muzzleAnchor, drawWorld, drawMinimap, console, Math, JSON, Date, structuredClone,
     document: { getElementById: element, querySelector: element, querySelectorAll: () => [], addEventListener() {} }, window: { addEventListener(name, cb) { events[name] = cb; } },
     localStorage: { getItem: k => storage.get(k), setItem: (k, v) => storage.set(k, v) },
     setTimeout: () => 1, clearTimeout() {}, requestAnimationFrame() {}, ResizeObserver: class { observe() {} },
   });
   const code = (await readFile(new URL('../src/game.js', import.meta.url), 'utf8')).replace(/^import .*?;\r?\n/gm, '');
-  vm.runInContext(code, context);
+  // Exercise gameplay synchronously; asset loading is covered by browser checks.
+  vm.runInContext(code.replace(/\nboot\(\);\s*$/, ''), context);
+  vm.runInContext('setupHub();preparedEquipment=equipmentSignature();loadingScene=false;',context);
   const run = code => vm.runInContext(code, context), tick = count => run(`for(let i=0;i<${count};i++) { update(1/120); if(terminal()) break; }`);
   const click = action => element('overlay').listeners.click({ target: { closest: () => ({ dataset: { action } }) } });
   return { run, click, tick, elements, storage, events };
 }
+
+test('gear traits affect actual shots, melee hits and one-time salvage selection',async()=>{
+ const {run,click,storage}=await boot();
+ run("mode='expedition';world=generateLevel(1,42,'industrial');player.activeWeapon='gun';player.ammo=1;player.shotCooldown=0;profile.equipment.gun.trait='capacitor';shoot();");
+ assert.ok(run('bullets[0].damage>stats(profile).gunDamage*2'));
+ run("player.activeWeapon='weapon';player.stamina=10;profile.equipment.weapon.trait='flow';world.enemies[0].dodge=0;world.enemies[0].hp=1000;hitEnemy(world.enemies[0],1);");
+ assert.equal(run('player.stamina'),17);
+ run("world.kills=world.enemies.length;complete();");
+ assert.equal(run('world.salvage.length'),2);assert.ok(run('world.salvage.every(item=>gearTrait(item))'));
+ const count=run('profile.bag.length');click('salvage:0');click('salvage:1');
+ assert.equal(run('profile.bag.length'),count+1);assert.equal(run('world.salvageClaimed'),true);
+ assert.ok(JSON.parse(storage.get('emberfall-save-v1')).bag.at(-1).trait);
+});
+
+test('repulsor keeps its shot property after switching weapons and pushes once per volley',async()=>{
+ const {run}=await boot();
+ run("mode='expedition';world=generateLevel(1,42,'industrial');player.activeWeapon='shotgun';profile.equipment.shotgun.trait='repulsor';player.ammo=6;shoot();const shot=bullets[0];const victim=world.enemies.find(e=>e.role==='runner');victim.hp=10000;victim.dodge=0;victim.x=1000;player.activeWeapon='gun';hitEnemy(victim,1,0,true,shot);");
+ assert.equal(run('victim.x'),1040);
+ run('hitEnemy(victim,1,0,true,bullets[1]);');assert.equal(run('victim.x'),1045);
+ run("victim.turret=true;hitEnemy(victim,1,0,true,{repulsor:true,volley:{}});");assert.equal(run('victim.x'),1045);
+});
+
+test('shield specialist applies directional protection and katana opens a damage window',async()=>{
+ const {run}=await boot();
+ run("mode='expedition';world=generateLevel(3,42,'industrial');const guard=world.enemies.find(e=>e.role==='heavy');Object.assign(guard,{variant:'shield',hp:1000,dodge:0,state:'patrol',facing:1,x:700});hitEnemy(guard,100,1000,true);");
+ assert.equal(run('guard.hp'),984);
+ run('hitEnemy(guard,100,0,true);');assert.equal(run('guard.hp'),904);
+ run('hitEnemy(guard,100,1000,false);');assert.equal(run('guard.hp'),804);assert.equal(run('guard.shieldDown'),3);
+ run('hitEnemy(guard,100,1000,true);');assert.equal(run('guard.hp'),724);
+});
+
+test('finale locks the archive, completes the chapter once and persists its reward',async()=>{
+ const {run,storage}=await boot();
+ run("profile.workshop={built:true,equipment:true,mod:'standard',samples:0,operations:1};profile.campaign={sabotage:true,prototype:true,intel:true,supply:true,finished:false};mode='expedition';world=generateLevel(3,42,'industrial');attachContract(world,campaignOffer(profile,1));target={kind:'package'};interact();");
+ assert.equal(run('world.package.taken'),false);
+ run('disableNode(world,0);disableNode(world,1);interact();complete();');
+ assert.equal(run('profile.campaign.finished'),true);assert.equal(run('profile.workshop.samples'),3);assert.equal(run('modal'),'complete');
+ run('complete();');assert.equal(run('profile.workshop.samples'),3);
+ assert.equal(JSON.parse(storage.get('emberfall-save-v1')).campaign.finished,true);
+ assert.equal(run('availableContracts().some(c=>c.id==="blackout")'),false);
+  run("profile.workshop.empReady=true;loadingScene=true;setupExpedition(1,'industrial',false);");assert.equal(run('world.empCharges'),2);assert.equal(run('profile.workshop.empReady'),false);
+});
+
+test('signal unlocks after chapter, runs in gameplay and pays once on return',async()=>{
+ const {run,storage}=await boot();assert.equal(run('availableContracts().some(c=>c.id==="signal")'),false);
+ run("profile.campaign={sabotage:true,prototype:true,intel:true,supply:true,finished:true};workshopState(profile).built=true;profile.workshop.samples=0;mode='expedition';world=generateLevel(3,42,'industrial');attachContract(world,signalOffer(2));Object.assign(player,{x:world.signal.x-10,y:world.signal.y-player.h});target={kind:'signal'};interact();");
+ assert.equal(run('world.signal.started'),true);assert.equal(run('availableContracts().some(c=>c.id==="signal")'),true);
+ run('world.signal.progress=74.999;update(1/120);');assert.equal(run('world.signal.done'),true);assert.equal(run('modal'),null);
+ run('complete();');assert.equal(run('profile.workshop.samples'),2);run('complete();');assert.equal(run('profile.workshop.samples'),2);
+ assert.equal(JSON.parse(storage.get('emberfall-save-v1')).workshop.samples,2);
+});
+
+test('enemy bullets hit the decoy before the hero and its lifetime expires in simulation',async()=>{
+ const {run}=await boot();
+ run("mode='expedition';world=generateLevel(1,42,'industrial');world.enemies=[];Object.assign(player,{x:800,y:484,hp:100});world.decoy={decoy:true,x:650,y:484,w:20,h:54,hp:60,life:10,vx:0,vy:0,attack:0};bullets=[projectile('enemy',{x:600,y:510},{x:900,y:510},20,1000)];updateBullets(.2);");
+ assert.equal(run('player.hp'),100);assert.equal(run('world.decoy.hp'),40);assert.equal(run('bullets.length'),0);
+ run('world.decoy.life=.001;update(1/120);');assert.equal(run('world.decoy'),null);
+});
+
+test('port finale blocks its key, awards field kit and H uses it once on a new contract',async()=>{
+ const {run,events}=await boot();
+ run("profile.workshop={built:true,equipment:true,samples:0,operations:1,researched:[],mod:'standard'};profile.campaign={finished:true,relaySignal:true,relaySupply:true,relayFinished:false};mode='expedition';world=generateLevel(3,42,'port');attachContract(world,relayOffer(profile,1));target={kind:'package'};interact();");assert.equal(run('world.package.taken'),false);
+ run('world.signal.done=true;interact();if(world.package.taken)throw Error("Commander gate bypassed");world.enemies.find(e=>e.commander).dead=true;interact();complete();');assert.equal(run('profile.campaign.relayFinished'),true);assert.equal(run('profile.workshop.samples'),4);
+ run("loadingScene=true;setupExpedition(1,'industrial',false);loadingScene=false;player.hp=40;");assert.equal(run('world.fieldKits'),1);
+ events.keydown({code:'KeyH',repeat:false});assert.equal(run('player.hp'),75);assert.equal(run('world.fieldKits'),0);
+ events.keydown({code:'KeyH',repeat:false});assert.equal(run('player.hp'),75);
+});
+
+test('chapter finale stays visible with exact requirements and accepts reconciled progress',async()=>{
+ const {run,elements}=await boot();run('departure();');
+ assert.ok(elements.get('overlay').innerHTML.includes('data-finale-status="locked"'));
+ assert.ok(elements.get('overlay').innerHTML.includes('mission-steps'));
+ run("profile.workshop={built:true,equipment:true,operations:1,samples:0,researched:[],mod:'standard'};profile.campaign={sabotage:false,prototype:false,finished:false};departure();");
+ const html=elements.get('overlay').innerHTML;assert.ok(html.includes('data-finale-status="ready"'));
+ assert.equal((html.match(/data-action="contract:blackout"/g)||[]).length,1);
+ assert.ok(!html.includes('data-action="contract:sabotage"'));
+ assert.equal(run('availableContracts().some(c=>c.id==="blackout")'),true);
+});
+
+test('chapter guidance leads from workshop launch to delivering one prototype',async()=>{
+ const {run,click,elements}=await boot();
+ run("profile.workshop={built:false,equipment:true,operations:0,samples:0,researched:[],mod:'standard'};departure();");
+ let html=elements.get('overlay').innerHTML;assert.ok(html.includes('data-action="workshop"'));
+ click('workshop');assert.ok(elements.get('overlay').innerHTML.includes('1 прототип'));
+ click('build-workshop');assert.ok(elements.get('overlay').innerHTML.includes('доставь 1 прототип'));
+ click('board');html=elements.get('overlay').innerHTML;assert.ok(html.includes('Доставить 1 прототип'));assert.ok(html.includes('data-action="contract:prototype"'));
+ assert.equal(run('campaignOffer(profile,1)'),null);
+});
+test('menu tabs switch content and keep module selection on its tab',async()=>{
+ const {run,click,elements}=await boot();run('departure();');click('board-tab:all');assert.ok(elements.get('overlay').innerHTML.includes('data-action="contract:assault"'));
+ click('board-tab:story');assert.ok(elements.get('overlay').innerHTML.includes('mission-focus'));
+ run("profile.workshop={built:true,equipment:true,operations:1,samples:2,researched:['duplex'],mod:'standard',gadget:'emp'};workshopMenu();");
+ click('workshop-tab:modules');assert.ok(elements.get('overlay').innerHTML.includes('Две пули за один патрон'));
+ click('weapon-mod:duplex');assert.equal(run('workshopView'),'modules');assert.equal(run('profile.workshop.mod'),'duplex');assert.ok(!elements.get('overlay').innerHTML.includes('<details'));
+});
 test('game boots, renders the cyberpunk hub, moves, jumps, trades and persists upgrades', async () => {
   const { run, click, tick, elements, storage } = await boot();
   run('render()'); assert.equal(run('mode'), 'hub'); assert.equal(elements.get('hp-text').textContent, '100 / 100');
@@ -71,19 +179,24 @@ test('Tab opens the character window in gameplay and keeps keyboard navigation i
   run('closeModal();profile.gold=100;die();');events.keydown({code:'Tab',preventDefault(){}});assert.equal(run('modal'),'death');
 });
 
-test('merchant compares each item to the same equipped slot with actual damage and empty-slot handling',async()=>{
-  const {run,elements}=await boot();
-  run('stock=[{id:"gun-test",type:"gun",name:"Test pistol",power:10,rarity:0},{id:"rifle-test",type:"rifle",name:"Test rifle",power:10,rarity:0},{id:"torso-test",type:"torso",name:"Test jacket",power:1,rarity:0},{id:"head-test",type:"head",name:"Test visor",power:1,rarity:0}];merchant();');
-  const html=elements.get('overlay').innerHTML;
-  assert.match(html,/data-compare-slot="gun" data-delta="5"/);
-  assert.match(html,/data-compare-slot="rifle" data-delta="4"/);
-  assert.match(html,/data-compare-slot="torso" data-delta="-1"/);
-  assert.match(html,/data-compare-slot="head" data-delta="0"/);
-  assert.match(html,/25 за выстрел <b[^>]*>\(\+5 урона\)/);assert.ok(!html.includes('Надето:'));
-  assert.match(html,/body-schematic/);assert.match(html,/bag-panel/);
-  run('profile.equipment.gun=null;merchant();');
-  assert.match(elements.get('overlay').innerHTML,/data-compare-slot="gun" data-delta="25"/);
-  assert.ok(!elements.get('overlay').innerHTML.includes('Надето:'));
+test('merchant inspector compares the selected item to the same equipment slot',async()=>{
+ const {run,elements}=await boot();
+ run('stock=[{id:"g",type:"gun",name:"Pistol",power:10,rarity:0},{id:"r",type:"rifle",name:"Rifle",power:10,rarity:0},{id:"t",type:"torso",name:"Jacket",power:1,rarity:0},{id:"h",type:"head",name:"Visor",power:1,rarity:0}];merchant();');
+ for(const [i,slot,delta]of [[0,'gun',5],[1,'rifle',4],[2,'torso',-1],[3,'head',0]])assert.ok(run("gearInspector(profile,stock,'stock-"+i+"',mode)").includes('data-compare-slot="'+slot+'" data-delta="'+delta+'"'));
+ run('profile.equipment.gun=null;');assert.ok(run("gearInspector(profile,stock,'stock-0',mode)").includes('data-delta="25"'));
+ assert.ok(elements.get('overlay').innerHTML.includes('stock-grid'));assert.ok(!elements.get('overlay').innerHTML.includes('<details'));
+});
+
+test('hover previews keep following the action under the pointer',async()=>{
+ const {run}=await boot();run("merchant();inspectGear({closest:()=>({dataset:{inspect:'stock-0'}})},true);");
+ assert.equal(run('gearPinned'),false);run("inspectGear({closest:()=>({dataset:{inspect:'stock-1'}})});");assert.equal(run('inspectedGear'),'stock-1');
+ run("inspectGear({closest:()=>({dataset:{inspect:'stock-1'}})},true);");assert.equal(run('inspectedGear'),'stock-1');
+});
+
+test('skills navigate overview, branch and focused perk while preserving learned ranks',async()=>{
+ const {run,click,elements}=await boot();run('skillTree();');assert.equal(run('skillBranch'),null);assert.ok(elements.get('overlay').innerHTML.includes('attribute-menu'));
+ click('branch:body');click('perk:constitution');click('learn:constitution');assert.equal(run('profile.skills.constitution'),1);assert.equal(run('skillFocus'),'constitution');
+ click('skill-overview');assert.equal(run('skillBranch'),null);click('branch:reflex');assert.equal(run('skillBranch'),'reflex');assert.equal(run('profile.skills.constitution'),1);
 });
 
 test('merchant purchases, equips, filters and sells without leaving its combined window',async()=>{
@@ -93,8 +206,8 @@ test('merchant purchases, equips, filters and sells without leaving its combined
   assert.equal(run('profile.bag[0].id'),'upgrade');assert.equal(run('stock.length'),0);
   click('equip:0');assert.equal(run('modal'),'merchant');assert.equal(run('profile.equipment.gun.id'),'upgrade');
   assert.equal(run('profile.bag[0].id'),'starter-gun');
-  click('filter:clothes');assert.equal(run('modal'),'merchant');assert.ok(!elements.get('overlay').innerHTML.includes('data-action="equip:0"'));
-  click('filter:weapons');assert.match(elements.get('overlay').innerHTML,/data-action="equip:0"/);
+  click('filter:clothes');assert.equal(run('modal'),'merchant');assert.ok(!elements.get('overlay').innerHTML.includes('data-inspect="bag-0"'));
+  click('filter:weapons');assert.match(elements.get('overlay').innerHTML,/data-inspect="bag-0"/);
   run('const sale=itemValue(profile.bag[0]);const money=profile.gold;');click('sell:0');
   assert.equal(run('modal'),'merchant');assert.equal(run('profile.gold'),run('money+sale'));assert.equal(run('profile.bag.length'),0);
   click('unequip:gun');assert.equal(run('modal'),'merchant');assert.equal(run('profile.equipment.gun'),null);
@@ -242,7 +355,8 @@ test('cache is single-use, completion unlocks next stage, and death preserves ge
 test('skills screen spends level points, updates combat stats and persists learned ranks', async () => {
   const { run, click, elements, storage } = await boot();
   run("press('p')"); assert.equal(run('modal'), 'skills');
-  assert.equal((elements.get('overlay').innerHTML.match(/class="skill-branch"/g) || []).length, 5);
+  assert.equal((elements.get('overlay').innerHTML.match(/class="attribute-card"/g) || []).length, 5);
+  click('branch:reflex');assert.equal(run('skillBranch'),'reflex');
   click('learn:blades'); assert.equal(run('stats(profile).damage'), 35);
   click('learn:blades'); assert.equal(run('stats(profile).damage'), 40); assert.equal(run('availablePoints(profile)'), 0);
   click('learn:blades'); assert.equal(run('profile.skills.blades'), 2);

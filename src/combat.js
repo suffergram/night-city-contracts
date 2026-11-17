@@ -1,5 +1,7 @@
 import { GROUND } from './world.js';
 import {useStairwell} from './stairwells.js';
+import {decoyTarget,hitDecoy} from './decoy.js';
+import {tickCommander} from './commander.js';
 
 export const center = actor => ({ x: actor.x + actor.w / 2, y: actor.y + actor.h / 2 });
 export function findLadder(actor,world,direction=0,id=null) {
@@ -179,11 +181,27 @@ function safeDodge(world,actor,direction,speed,duration){
   }
   return true;
 }
-export function updateEnemies(world, player, bullets, dt, damagePlayer) {
-  const pc = center(player);
+export function updateEnemies(world, hero, bullets, dt, damagePlayer) {
   for (const e of world.enemies) {
     if (e.dead) continue;
-    const tactics=ENEMY_TACTICS[e.role];
+    const player=decoyTarget(world,hero,e),pc=center(player);
+    if(e.disabledFor>0){e.disabledFor=Math.max(0,e.disabledFor-dt);e.vx=0;if(!e.disabledFor){e.timer=0;e.state='patrol';}continue;}
+    if(e.commander){
+      const attack=tickCommander(e,player,dt);
+      for(const shot of attack.shots)bullets.push(projectile('enemy',shot.from,shot.to,shot.damage,shot.speed,{range:620}));
+      if(attack.hit){if(player.decoy)hitDecoy(world,e.damage*1.5);else damagePlayer(e.damage*1.5,center(e).x);}
+      physics(e,world,dt,null);continue;
+    }
+    if(e.turret){
+      if(e.powerOff)continue;
+      e.cooldown-=dt;const dx=pc.x-center(e).x,dy=pc.y-center(e).y;e.facing=dx>=0?1:-1;
+      if(e.state==='windup'){
+        e.timer-=dt;if(e.timer<=0){bullets.push(projectile('enemy',center(e),{x:e.aimX,y:e.aimY},e.damage,360,{range:650}));e.state='patrol';e.cooldown=2;}
+      }else if(e.cooldown<=0&&Math.abs(dx)<620&&Math.abs(dy)<200){e.state='windup';e.timer=1.2;e.aimX=pc.x;e.aimY=pc.y;}
+      continue;
+    }
+    const tactics=e.variant==='sniper'?{...ENEMY_TACTICS.gunner,windup:1.5,recover:1,cooldown:2.6}:ENEMY_TACTICS[e.role];
+    e.shieldDown=Math.max(0,(e.shieldDown||0)-dt);
     for (const field of ['cooldown', 'flash', 'dodge', 'dodgeCooldown', 'dashCooldown', 'jumpCooldown', 'drop','routeCooldown']) e[field] = Math.max(0, (e[field]||0) - dt);
     const ec = center(e), dx = pc.x - ec.x, dy = pc.y - ec.y, distance = Math.abs(dx);
     const aggro = distance < (e.role==='gunner'?740:650) && Math.abs(dy) < 430;
@@ -212,10 +230,10 @@ export function updateEnemies(world, player, bullets, dt, damagePlayer) {
       e.state='evade';
     } else if (e.state === 'windup') {
       e.vx = 0; e.timer -= dt;
-      if(e.role==='gunner'&&e.timer>.09){e.facing=Math.sign(dx)||e.facing;e.aimX=pc.x+player.vx*.1;e.aimY=pc.y;}
+      if(e.role==='gunner'&&e.timer>(e.variant==='sniper'?.65:.09)){e.facing=Math.sign(dx)||e.facing;e.aimX=pc.x+player.vx*.1;e.aimY=pc.y;}
       if (e.timer <= 0) {
-        if (e.role === 'gunner') bullets.push(projectile('enemy', { x: ec.x + e.facing * 20, y: ec.y - 4 }, { x: e.aimX, y: e.aimY }, e.damage, 430 + Math.min(world.depth, 20) * 5));
-        else if (distance < tactics.hitReach && Math.abs(dy) < 55 && dx * e.facing > -10) damagePlayer(e.damage, ec.x);
+        if (e.role === 'gunner') bullets.push(projectile('enemy', { x: ec.x + e.facing * 20, y: ec.y - 4 }, { x: e.aimX, y: e.aimY }, e.damage*(e.variant==='sniper'?1.4:1),e.variant==='sniper'?650:430 + Math.min(world.depth, 20) * 5,{range:680}));
+        else if (distance < tactics.hitReach && Math.abs(dy) < 55 && dx * e.facing > -10) {if(player.decoy)hitDecoy(world,e.damage);else damagePlayer(e.damage, ec.x);}
         e.state = 'recover'; e.timer = tactics.recover; e.cooldown = tactics.cooldown;
       }
     } else if (e.state === 'recover') {
@@ -225,7 +243,7 @@ export function updateEnemies(world, player, bullets, dt, damagePlayer) {
       if (aggro) {
         e.facing = Math.sign(dx) || e.facing;
         e.vx = e.facing * e.speed;
-        if (e.role === 'gunner') e.vx = distance < 280 ? -e.facing * e.speed : distance < 460 ? 0 : e.vx;
+        if (e.role === 'gunner') e.vx = distance < (e.variant==='sniper'?360:280) ? -e.facing * e.speed : distance < (e.variant==='sniper'?580:460) ? 0 : e.vx;
         const trapped=e.role==='gunner'&&e.grounded&&e.vx*e.facing<0&&!safeDodge(world,e,-e.facing,e.speed,.2);
         if(trapped)e.vx=0;
         {

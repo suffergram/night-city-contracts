@@ -1,3 +1,14 @@
+import {skillScreen} from './skill-ui.js';
+import {gearScreen,gearInspector} from './gear-ui.js';
+import {boardUI,workshopUI} from './menu-ui.js';
+import {commanderAlive} from './commander.js';
+import {selectGadget,prepareDecoy,equipGadget,deployDecoy,hitDecoy,gadgetStatus} from './decoy.js';
+import {signalOffer,startSignal,updateSignal,signalObjective} from './signal.js';
+import {campaignState,campaignOffer,campaignBrief,firstChapterStatus,advanceCampaign,empCapacity,relayOffer,relayBrief,useFieldKit} from './campaign.js';
+import {gearTrait,gearArmor,assignTrait,gearShot,gearMeleeStamina,gearIncoming,gearRoll,gearKnockback} from './gear.js';
+import {variantHit,securityIntel} from './enemy-variants.js';
+import {workshopState,buildWorkshop,prepareEmp,deployEmp,disconnectPower,RESEARCH,researchModule,selectModule,deliverPrototype,meleeModuleEffect} from './workshop.js';
+import {contractOffers,attachContract,contractReady,disableNode,contractObjective,securityOffer} from './contracts.js';
 import { GROUND, BAG_LIMIT, SLOTS, BALANCE, stats, addXp, makeItem, itemValue, buyPrice, generateLevel, loadProfile, recommendedDepth, trainingCost, enemyReward } from './world.js';
 import { center, physics, segmentHit, projectile, projectileStep, projectileDamage, incomingDamage, updateEnemies,findLadder } from './combat.js';
 import { drawWorld, drawMinimap } from './render.js';
@@ -18,6 +29,7 @@ const SAVE_KEY = 'emberfall-save-v1';
 let stored = null;
 try { stored = localStorage.getItem(SAVE_KEY); } catch { /* Session-only play is supported. */ }
 const profile = loadProfile(stored), keys = new Set();
+const availableContracts=()=>[...contractOffers(recommendedDepth(profile)),...(relayOffer(profile,recommendedDepth(profile))?[relayOffer(profile,recommendedDepth(profile))]:[]),...(campaignState(profile).finished?[signalOffer(recommendedDepth(profile))]:[]),...(workshopState(profile).built?[securityOffer(recommendedDepth(profile))]:[]),...(campaignOffer(profile,recommendedDepth(profile))?[campaignOffer(profile,recommendedDepth(profile))]:[])];
 const player = { x: 540, y: GROUND - ACTOR_HEIGHT, w: 20, h: ACTOR_HEIGHT, vx: 0, vy: 0, facing: 1, grounded: true,
   hp: stats(profile).maxHp, stamina: stats(profile).maxStamina, invuln: 0, attack: 0, cooldown: 0, drop: 0,
   coyote: 0, jumpBuffer: 0, dodge: 0, dodgeCooldown: 0, guardBreak: 0, blocking: false, regenDelay: 0,
@@ -27,6 +39,7 @@ let mode = 'hub', world, camera = 0,cameraY=0,cameraLook=0, time = 0, modal = nu
 const CAMERA_MODE='three-positions'; // Set to 'floating' to restore continuous mouse tracking.
 let cameraPosition=0;
 let particles = [], floats = [], bullets = [], shake = 0, toastTimer, stock = [], target = null, bagFilter = 'all';
+let skillBranch=null,skillFocus=null,workshopView='gadgets',inspectedGear='equipment-weapon',gearPinned=false;
 const mouse = { active: false, x: 0, y: 0 };
 const cheats={godmode:false,oneshot:false,speed:false,ammo:false,jump:false};
 const cheatNames={godmode:'Неуязвимость',oneshot:'Убийство с одного попадания',speed:'Быстрый бег ×3',ammo:'Бесконечные патроны',jump:'Мегапрыжок'};
@@ -43,14 +56,16 @@ const terminal = () => ['death', 'complete'].includes(modal);
 const characterTabs = active => `<nav class="character-tabs" aria-label="Меню персонажа">${button('01 / СНАРЯЖЕНИЕ', 'inventory', active !== 'inventory')}${button(`02 / СПОСОБНОСТИ [${availablePoints(profile)}]`, 'skills', active !== 'skills')}</nav>`;
 const damageStats={weapon:'damage',gun:'gunDamage',rifle:'rifleDamage',shotgun:'shotgunDamage'};
 const itemDamage = item => stats({...profile,equipment:{...profile.equipment,[item.type]:item}})[damageStats[item.type]];
-const itemStat = item => !weaponSlots.includes(item.type)?`${item.power} брони`:
+const baseItemStat = item => !weaponSlots.includes(item.type)?`${gearArmor(item)} брони`:
   `${itemDamage(item)}${item.type==='shotgun'?' × 5 дробин':item.type==='weapon'?' за удар':' за выстрел'}`;
+const itemStat=item=>baseItemStat(item);
+const itemDetails=item=>gearTrait(item)?'<details class="item-property"><summary>'+escape(gearTrait(item).name)+'</summary><p>'+escape(gearTrait(item).description)+'</p></details>':'';
 function itemComparison(item){
   const worn=profile.equipment[item.type],weapon=weaponSlots.includes(item.type);
-  const before=worn?(weapon?itemDamage(worn):worn.power):0,after=weapon?itemDamage(item):item.power,delta=after-before;
+  const before=worn?(weapon?itemDamage(worn):gearArmor(worn)):0,after=weapon?itemDamage(item):gearArmor(item),delta=after-before;
   const tone=delta>0?'positive':delta<0?'negative':'unchanged';
   const unit=!weapon?'брони':item.type==='shotgun'?'за дробину × 5':'урона';
-  return `<b class="item-delta ${tone}" data-compare-slot="${item.type}" data-delta="${delta}">${delta?`(${delta>0?'+':''}${delta} ${unit})`:'(без изменений)'}</b>`;
+  return (gearTrait(item)?.name!==gearTrait(worn)?.name?'<span class="property-change">Другое свойство</span> ':'')+`<b class="item-delta ${tone}" data-compare-slot="${item.type}" data-delta="${delta}">${delta?`(${delta>0?'+':''}${delta} ${unit})`:'(без изменений)'}</b>`;
 }
 
 function save() {
@@ -63,6 +78,8 @@ function toast(message) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.add('hidden'), 3800);
 }
 function updateHUD() {
+  $('gadget-readout').textContent=mode==='expedition'?gadgetStatus(world)+' · G'+(world.fieldKits?' · Медкомплект: '+world.fieldKits+' · H':''):'';
+  if(world?.signal){$('objective').textContent=signalObjective(world);$('badge-subtitle').textContent=world.signal.done?'Сигнал перехвачен':Math.floor(world.signal.progress)+' / '+world.signal.duration+' с';$('expedition-label').textContent=signalObjective(world);}
   const s = stats(profile);
   $('hp-text').textContent = `${Math.ceil(player.hp)} / ${s.maxHp}`;
   $('hp-bar').style.width = `${Math.max(0, player.hp / s.maxHp * 100)}%`;
@@ -115,7 +132,9 @@ function updateUI() {
   $('damage-stat').textContent = `${s.damage} / ${s.gunDamage}`; $('armor-stat').textContent = s.armor; $('gold-stat').textContent = profile.gold;
   $('bag-count').textContent = `${profile.bag.length} / ${BAG_LIMIT}`;
   $('skills-button').textContent = `Способности · ${availablePoints(profile)} очк. ↗`;
-  document.querySelector('.portrait').innerHTML = '<canvas class="raster-avatar closeup" width="180" height="220" aria-label="Портрет наёмника"></canvas>';
+  const portrait=document.querySelector('.portrait');
+  if(!portrait.querySelector('canvas.raster-avatar'))portrait.innerHTML='<canvas class="raster-avatar closeup" width="180" height="220" aria-label="Портрет наёмника"></canvas>';
+  paintPreviews(profile.equipment,0,'.portrait canvas.raster-avatar');
   $('equipment').innerHTML = ['weapon', 'gun', 'torso'].map(slot => {
     const item = profile.equipment[slot];
     return `<div class="equipment-row"><div class="item-icon ${rarityClasses[item?.rarity || 0]}">${icons[slot]}</div><div><strong>${item ? escape(item.name) : SLOTS[slot] + ' · пусто'}</strong><small>${item ? itemStat(item) : 'Не экипировано'}</small></div></div>`;
@@ -127,10 +146,15 @@ function updateUI() {
   $('world-info').textContent = hub ? 'Найт-Сити · 02:17 · Сухая ночь' : `${world.flavour} · Угроза ${world.depth}`;
   $('scene-icon').textContent = hub ? '⌂' : '⚠'; $('badge-title').textContent = hub ? 'Убежище H10' : world.name;
   $('badge-subtitle').textContent = hub ? 'Оружейник · Рипер · Контракты' : `Цели: ${world.enemies.length - world.kills}`;
-  $('objective').textContent = hub ? `Автомобиль ждёт · Следующая угроза: ${recommendedDepth(profile)}` : world.kills === world.enemies.length ? 'Сектор чист. Доберись до точки отправления' : `Нейтрализуй противников: ${world.kills} / ${world.enemies.length}`;
+  $('objective').textContent = hub ? 'Контракты: подойди к машине и нажми E' : contractReady(world) ? 'Задача выполнена. Вернись к транспорту' : `Нейтрализуй противников: ${world.kills} / ${world.enemies.length}`;
   $('quest-title').textContent = hub ? 'Город сожрёт слабых' : 'Зачистка сектора';
   $('quest-description').textContent = hub ? 'Мира торгует оружием и одеждой. Орин установит усиления. Контракт учитывает твою силу и пройденную угрозу.' : 'Стрелки держат дистанцию, клинки заходят прыжками, штурмовики прикрываются бронёй. Следи за красным предупреждением перед атакой.';
   $('quest-progress').textContent = `Медгели: ${profile.potions} · ${hub ? 'Рекорд: ' + profile.best : 'Эдди за контракт: ' + world.earned}`;
+  if(!hub&&world.contract){$('objective').textContent=contractObjective(world);$('quest-title').textContent=world.contract.name;$('quest-description').textContent=contractObjective(world);$('scene-subtitle').textContent=world.contract.description;$('badge-subtitle').textContent=world.sabotageNodes?`Узлы: ${world.sabotageNodes.filter(n=>n.disabled).length} / 2`:`Цели: ${world.enemies.length-world.kills}`;}
+  if(!hub&&world.package){$('badge-subtitle').textContent=world.package.taken?(world.package.name||'Прототип')+' получен':'Найди '+(world.package.name||'прототип');$('expedition-label').textContent=contractObjective(world);}
+  if(hub)$('quest-progress').textContent+=workshopState(profile).built?' · Образцы: '+workshopState(profile).samples:'';
+  if(!hub)$('quest-progress').textContent+=` · ${gadgetStatus(world)} · G${campaignState(profile).relayFinished?" · Медкомплект: "+(world.fieldKits||0)+" · H":""}`;
+  if(world.signal){$('badge-subtitle').textContent=world.signal.done?'Сигнал перехвачен':Math.floor(world.signal.progress)+' / '+world.signal.duration+' с';$('expedition-label').textContent=signalObjective(world);}
   $('hub-button').disabled = hub;
 }
 function resetCombat() {
@@ -150,19 +174,20 @@ function setupHub() {
   stock = Object.keys(SLOTS).map(slot => makeItem(recommendedDepth(profile), Math.random, slot));
   camera = 0;cameraY=0; closeModal(); save(); updateUI();
 }
-function expedition(depth=recommendedDepth(profile),kind,reroll=false){
-  return loadScene('Подготовка контракта',()=>setupExpedition(depth,kind,reroll));
+function expedition(depth=recommendedDepth(profile),kind,reroll=false,offer=null){
+  return loadScene('Подготовка контракта',()=>setupExpedition(depth,kind,reroll,offer));
 }
-function setupExpedition(depth,kind,reroll) {
+function setupExpedition(depth,kind,reroll,offer) {
   // Explicit next-stage depth can never fall below the character's recorded strength.
   depth = reroll?depth:Math.max(depth, recommendedDepth(profile));
-  mode = 'expedition'; world = generateLevel(depth,undefined,kind); resetCombat();
+  mode = 'expedition'; world = generateLevel(depth,undefined,kind); if(offer)attachContract(world,offer); const ws=workshopState(profile);equipGadget(world,profile,empCapacity(profile));world.fieldKits=campaignState(profile).relayFinished?1:0; resetCombat();
   Object.assign(player, { x:world.spawn.x, y:world.spawn.y-player.h, facing:world.spawn.x>world.width/2?-1:1, invuln: 1.2 });
   camera = horizontalCameraTarget();cameraY=0;closeModal();save();updateUI();
-  toast(`${world.name} · Угроза ${depth} · Целей: ${world.enemies.length}. W/S — лестницы · Пробел — прыжок.`);
+  toast(world.contract?`${world.contract.name} · ${contractObjective(world)}`:`${world.name} · Угроза ${depth} · Целей: ${world.enemies.length}. W/S — лестницы · Пробел — прыжок.`);
 }
 function showModal(title, description, content = '', actions = '', wide = false) {
   lastInteraction=null;
+  $('overlay').dataset||={};$('overlay').dataset.menu=modal;
   keys.clear(); player.vx = 0; player.blocking = false;
   $('interaction').classList.add('hidden');
   $('overlay').classList.toggle('character-overlay', ['inventory', 'skills', 'merchant'].includes(modal));
@@ -189,49 +214,40 @@ function toggleCheat(code) {
   }
   cheatNotice(`${cheatNames[code]}: ${cheats[code]?'ВКЛ':'ВЫКЛ'}`);
 }
-function departure() {
-  modal='depart';const depth=recommendedDepth(profile);
-  const locations=cheatHotkeysEnabled?`<p>Тестовый переход: выбери локацию.</p><div class="modal-buttons">${Object.entries(cheatLocations).map(([kind,name])=>button(name,`test-location:${kind}`,true)).join('')}</div>`:'';
-  showModal(`Контракт / Угроза ${depth}`, 'Уровень подобран по твоим характеристикам, экипировке и пройденной угрозе. Зачисти сектор и доберись до терминала. У стрелков есть лазерный прицел, у бойцов — замах перед ударом.',locations,button(cheatHotkeysEnabled?'Случайная локация':'Принять контракт','start')+button('Подготовиться','close',true));
+function workshopMenu(view=workshopView){
+  workshopView=['gadgets','modules'].includes(view)?view:'gadgets';
+  modal='workshop';
+  showModal('Мастерская','',workshopUI(profile,empCapacity(profile),workshopView),button('К контрактам','board',true)+button('Снаряжение','inventory',true),true);
 }
-function characterPanels() {
-  const s = stats(profile);
-  const equipped = Object.entries(SLOTS).map(([slot, name]) => {
-    const item = profile.equipment[slot];
-    return `<div class="slot-row" data-equipment-slot="${slot}"><span class="item-icon ${rarityClasses[item?.rarity || 0]}">${icons[slot]}</span><div class="item-copy"><small>${name.toUpperCase()}</small><strong>${item ? escape(item.name) : 'Пустой слот'}</strong><small>${item ? `${rarityNames[item.rarity]} · ${itemStat(item)}` : 'Можно надеть из рюкзака'}</small></div>${item ? button('Снять', `unequip:${slot}`, true, profile.bag.length >= BAG_LIMIT) : ''}</div>`;
-  }).join('');
-  const rows = profile.bag.map((item, i) => {
-    const weapon = weaponSlots.includes(item.type);
-    if (bagFilter === 'weapons' && !weapon || bagFilter === 'clothes' && weapon) return '';
-    return `<div class="shop-row" data-item-slot="${item.type}"><span class="item-icon ${rarityClasses[item.rarity]}">${icons[item.type]}</span><div class="item-copy"><strong>${escape(item.name)}</strong><small>${SLOTS[item.type]} · ${itemStat(item)} ${itemComparison(item)} · ${rarityNames[item.rarity]}</small></div><div class="item-actions">${button('Надеть', `equip:${i}`)}${mode === 'hub' ? button(`Продать · ${itemValue(item)} €$`, `sell:${i}`, true) : ''}</div></div>`;
-  }).join('');
-  const schematic = previewMarkup(profile.equipment);
-  return `<div class="character-stats"><span>HP <b>${Math.ceil(player.hp)}/${s.maxHp}</b></span><span>КАТАНА <b>${s.damage}</b></span><span>ОГОНЬ <b>${s.gunDamage}/${s.rifleDamage}/${s.shotgunDamage}×5</b></span><span>БРОНЯ <b>${s.armor}</b></span><span>ВЫНОСЛ. <b>${s.maxStamina}</b></span><span>ЭДДИ <b>${profile.gold}</b></span></div><div class="character-layout"><section class="loadout"><div class="section-label">ЭКИПИРОВКА / 8 СЛОТОВ</div><div class="loadout-body"><div class="body-schematic">${schematic}<small>СОЛО / H10<br>БИОМЕТРИЯ В НОРМЕ</small></div><div class="slots">${equipped}</div></div><p>Усиления: сила ${profile.strength} / выносливость ${profile.vitality}. Угроза контракта: ${recommendedDepth(profile)}.</p></section><section class="bag-panel"><div class="section-label">РЮКЗАК <span>${profile.bag.length} / ${BAG_LIMIT}</span></div><div class="bag-filters">${['all', 'weapons', 'clothes'].map((f, i) => button(['Всё', 'Оружие', 'Одежда'][i], `filter:${f}`, bagFilter !== f)).join('')}</div><div class="inventory-list">${rows || '<p>Нет предметов в этой категории.</p>'}</div><p>Медгель: ${profile.potions} · +${s.healing} HP · Q.${mode==='hub'?' Предметы из рюкзака можно продать.':''}</p></section></div>`;
+function departure(view='story'){
+  modal='depart';
+  const locations=cheatHotkeysEnabled?'<details class="menu-details"><summary>Тестовые переходы</summary><div class="modal-buttons">'+Object.entries(cheatLocations).map(([kind,name])=>button(name,'test-location:'+kind,true)).join('')+'</div></details>':'';
+  showModal('Контракты','',boardUI(profile,availableContracts(),view)+locations,button('Мастерская','workshop',true)+button('Снаряжение','inventory',true),true);
+}
+function characterPanels(){return gearScreen(profile,{hp:player.hp,filter:bagFilter,selected:inspectedGear,mode,pinned:gearPinned});}
+function inspectGear(target,pin=false){
+  if(!['inventory','merchant'].includes(modal))return;
+  const key=target?.closest?.('[data-inspect]')?.dataset.inspect;
+  if(!key)return;
+  gearPinned=false;
+  inspectedGear=key;const panel=$('overlay').querySelector('.gear-inspector');
+  if(panel){panel.innerHTML=gearInspector(profile,modal==='merchant'?stock:null,key,mode);panel.dataset||={};panel.dataset.pinned=String(gearPinned);}
+  for(const el of $('overlay').querySelectorAll('[data-inspect]')){el.classList.toggle('chosen',el.dataset.inspect===key);el.querySelector?.('.gear-tile')?.classList.toggle('chosen',el.dataset.inspect===key);}
 }
 function inventory() {
+  if(modal!=='inventory')gearPinned=false;
   modal='inventory';const s=stats(profile);
-  showModal('Персонаж / Наёмник', `Уровень ${profile.level} · Опыт ${profile.xp}/${s.nextXp}. Сравнение предметов показывает разницу с надетой вещью.`, characterTabs('inventory')+characterPanels(), button('Закрыть · B / Esc', 'close', true), true);
+  showModal('Персонаж · Уровень '+profile.level, '', characterTabs('inventory')+characterPanels(), button('Закрыть · B / Esc', 'close', true), true);
 }
-function skillTree() {
-  const previousScroll = modal === 'skills' ? $('overlay').querySelector('.modal')?.scrollTop || 0 : 0;
-  modal = 'skills';
-  const branches = Object.entries(BRANCHES).map(([branch, info]) => {
-    const nodes = Object.entries(SKILLS).filter(([, skill]) => skill.branch === branch);
-    return `<section class="skill-branch"><header><span>${info.icon}</span><h3>${info.name}</h3><small>${info.subtitle}</small></header><div class="branch-nodes">${nodes.map(([id, skill], index) => {
-      const rank = profile.skills[id] || 0, status = skillStatus(profile, id);
-      return `<article class="skill-node tier-${index} ${rank ? 'learned' : ''} ${status.allowed ? 'available' : 'locked'}"><div class="node-emblem">${rank === skill.max ? '✓' : index === 0 ? info.icon : index === 3 ? '✦' : '◇'}</div><span class="node-rank">${rank}/${skill.max}</span><h4>${skill.name}</h4><p>${skill.description}</p><small>УРОВЕНЬ ${skill.level}${skill.requires ? ' · ' + Object.entries(skill.requires).map(([id, n]) => SKILLS[id].name + ' ' + n).join(', ') : ''}</small>${button(status.allowed ? 'ИЗУЧИТЬ · 1' : status.reason, `learn:${id}`, !status.allowed, !status.allowed)}</article>`;
-    }).join('')}</div></section>`;
-  }).join('');
-  showModal('Способности', 'Выбирай специализацию. Каждый ранг стоит 1 очко. Два очка за уровень, включая первый; узлы открываются по уровню и изученным навыкам.', `${characterTabs('skills')}<div class="skill-summary"><div><strong>${availablePoints(profile)}</strong><span>ОЧКОВ ДОСТУПНО</span></div><span>УРОВЕНЬ ${profile.level} / ВЛОЖЕНО ${spentPoints(profile)} ИЗ ${skillBudget(profile)}</span><p>Ранги сохраняются. Начни с верхнего узла любой ветки.</p></div><div class="skill-forest">${branches}</div>`, button('К персонажу', 'inventory', true) + button('Закрыть · P / Esc', 'close', true), true);
-  $('overlay').querySelector('.modal').scrollTop = previousScroll;
+function skillTree(){
+  if(modal!=='skills'){skillBranch=null;skillFocus=null;}
+  modal='skills';
+  showModal('Способности','',characterTabs('skills')+skillScreen(profile,skillBranch,skillFocus),button('Снаряжение','inventory',true)+button('Закрыть','close',true),true);
 }
-function merchant() {
-  const selectors=['.modal','.merchant-stock .inventory-list','.bag-panel .inventory-list'];
-  const scroll=selectors.map(selector=>modal==='merchant'?$('overlay').querySelector(selector)?.scrollTop||0:0);
-  modal = 'merchant';
-  const rows = stock.map((item, i) => `<div class="shop-row" data-item-slot="${item.type}"><span class="item-icon ${rarityClasses[item.rarity]}">${icons[item.type]}</span><div class="item-copy"><strong>${escape(item.name)}</strong><small>${SLOTS[item.type]} · ${itemStat(item)} ${itemComparison(item)} · ${rarityNames[item.rarity]}</small></div>${button(`Купить · ${buyPrice(item)} €$`, `buy:${i}`, false, profile.gold < buyPrice(item) || profile.bag.length >= BAG_LIMIT)}</div>`).join('');
-  showModal('Мира / Оружейник', 'Сравни товар с надетой вещью того же типа. Купленное попадёт в рюкзак — здесь же можно надеть его или продать лишнее.', `<div class="merchant-layout"><section class="merchant-stock"><div class="section-label">ТОВАРЫ МИРЫ <span>${stock.length} ПРЕДМЕТОВ</span></div>${profile.bag.length>=BAG_LIMIT?'<p class="negative">Рюкзак заполнен. Продай предмет или освободи место.</p>':''}<div class="inventory-list"><div class="shop-row"><span class="item-icon">✚</span><div class="item-copy"><strong>Медгель</strong><small>+${stats(profile).healing} HP · Есть: ${profile.potions}</small></div>${button(`Купить · ${BALANCE.potionCost} €$`, 'potion', false, profile.gold < BALANCE.potionCost)}</div>${rows}</div></section><section class="merchant-character" aria-label="Персонаж и рюкзак">${characterPanels()}</section></div>`, button('Закрыть · Esc', 'close', true), true);
-  selectors.forEach((selector,i)=>{const el=$('overlay').querySelector(selector);if(el)el.scrollTop=scroll[i];});
+function merchant(){
+  if(modal!=='merchant'){inspectedGear=stock.length?'stock-0':'potion-0';gearPinned=false;}
+  modal='merchant';
+  showModal('Мира / Оружейник','',gearScreen(profile,{hp:player.hp,stock,filter:bagFilter,selected:inspectedGear,mode,pinned:gearPinned}),button('Закрыть','close',true),true);
 }
 function refreshGear(){if(modal==='merchant')merchant();else inventory();}
 function trainer() {
@@ -244,13 +260,24 @@ function help() {
   showModal('Боевой протокол', 'Выбери оружие на 1–4. ЛКМ всегда атакует выбранным. Можно бежать назад, целиться и атаковать на ходу или в прыжке. Катана и блок расходуют выносливость.', `<div class="help-grid"><span><kbd>A</kbd><kbd>D</kbd></span><span>Движение · Space — прыжок · W/S у лестницы — подъём/спуск</span><kbd>1 / 2 / 3 / 4</kbd><span>Катана / пистолет / автомат / дробовик</span><kbd>ЛКМ / J</kbd><span>Атака выбранным оружием · удерживать</span><kbd>ПКМ / K</kbd><span>Блок спереди · наведи мышь на угрозу</span><kbd>Shift</kbd><span>Перекат; в воздухе — с навыком воздушного рывка</span><kbd>R</kbd><span>Перезарядка · отдельные магазины</span><kbd>E / Q</kbd><span>Действие / медгель (+${stats(profile).healing} HP)</span><kbd>Tab / B / I / P</kbd><span>Персонаж / рюкзак / способности</span><kbd>⛶ / F11</kbd><span>Полноэкранный режим браузера</span><kbd>Esc</kbd><span>Пауза / закрыть окно</span></div>`, button('Принято', 'close'));
 }
 function complete() {
+  if(!contractReady(world))return;
   if (modal === 'complete') return;
   profile.best = Math.max(profile.best, world.depth);
-  const reward = 12 + world.depth * 3; profile.gold += reward; world.earned += reward;
-  const levels = addXp(profile, 12);
+  if(world.contract?.paid)return; if(world.contract)world.contract.paid=true;
+  if(world.contract?.id==='sabotage')workshopState(profile).equipment=true;
+  if(world.contract?.id==='prototype')deliverPrototype(profile);
+  if(world.contract?.id==='signal')workshopState(profile).samples+=2;
+  const campaignMessage=advanceCampaign(profile,world);
+  const reward = world.contract?.reward ?? (12 + world.depth * 3); profile.gold += reward; world.earned += reward;
+  const levels = addXp(profile, world.contract?.xp ?? 12);
   if (levels) { player.hp = Math.min(stats(profile).maxHp, player.hp + 20); toast(`Уровень ${profile.level}. +${levels * 2} очка способностей · P.`); }
+  if(!world.salvage){const slots=['weapon','gun','rifle','shotgun','torso','feet'];for(let i=slots.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[slots[i],slots[j]]=[slots[j],slots[i]];}world.salvage=slots.slice(0,2).map(slot=>assignTrait(makeItem(world.depth,Math.random,slot),Math.random,true));}
   save(); updateUI(); modal = 'complete';
-  showModal('Контракт закрыт', `Угроза ${world.depth}. Целей: ${world.kills}. Доход: ${world.earned} €$, включая бонус ${reward}. Следующий сектор сложнее; здоровье не восстановится при переходе.`, '', button(`Следующий сектор · ${Math.max(world.depth + 1, recommendedDepth(profile))}`, 'next') + button('В убежище', 'hub', true));
+  const rewards='<div class="reward-chips"><span>'+world.earned+' эдди</span><span>'+ (world.contract?.xp??12)+' XP</span>'+(['prototype','signal'].includes(world.contract?.id)?'<span>'+(world.contract.id==='signal'?2:1)+' образц.</span>':'')+'</div>';
+  const unlock=campaignMessage?'<details class="menu-details" open><summary>Открыто улучшение хаба</summary><p>'+campaignMessage+'</p></details>':'';
+  const next=!campaignState(profile).finished?'<div class="next-step">Далее: '+firstChapterStatus(profile).next.label+'</div>':'';
+  showModal('Контракт закрыт','Выбери один трофей.',rewards+unlock+next+world.salvage.map((item,i)=>'<div class="shop-row"><div class="item-copy"><strong>'+escape(item.name)+'</strong><small>'+itemStat(item)+' '+itemComparison(item)+'</small>'+itemDetails(item)+'</div>'+button('Забрать','salvage:'+i,false,profile.bag.length>=BAG_LIMIT)+'</div>').join('')+'<small>В хабе здоровье восстановится. Продолжение вылазки — без лечения.</small>',button('Вернуться в хаб','hub')+button('Продолжить вылазку','next',true),true);
+
 }
 function die() {
   if (modal === 'death') return;
@@ -271,6 +298,11 @@ function drink() {
 }
 function interact() {
   if (!target) return;
+  if(target.kind==='signal'){if(startSignal(world)){toast('Перехват запущен. Удерживай отмеченную зону');updateUI();}return;}
+  if(target.kind==='workshop'){workshopMenu();return;}
+  if(target.kind==='power'){disconnectPower(world);toast('Питание отключено');updateUI();return;}
+  if(target.kind==='package'){if(commanderAlive(world)){toast('Ключ защищён надзирателем. Сначала победи его');return;}if(world.signal&&!world.signal.done){toast('Груз заблокирован. Сначала заверши взлом');return;}if(world.contract?.id==='blackout'&&!world.sabotageNodes.every(n=>n.disabled)){toast('Архив заблокирован. Сначала отключи оба замка');return;}world.package.taken=true;toast((world.package.name||'Прототип')+' получен. Возвращайся к транспорту');updateUI();return;}
+  if(target.kind==='sabotage'){if(disableNode(world,target.object.id)){toast(contractObjective(world)+(world.sabotageNodes.filter(n=>n.disabled).length===1?' · Прибыло подкрепление!':''));updateUI();}return;}
   if(target.kind==='stairwell'){
     const {connection,up}=target.object;
     if(useStairwell(player,connection,up)){findTarget();toast(up?'Второй этаж':'Первый этаж');}
@@ -287,13 +319,14 @@ function interact() {
   if (target.kind === 'portal') {
     if (mode === 'hub') {
       departure();
-    } else if (world.kills < world.enemies.length) toast(`Эвакуация небезопасна. Осталось целей: ${world.enemies.length - world.kills}.`);
+    } else if (!contractReady(world)) toast(contractObjective(world));
     else complete();
   }
 }
 function highlightEquipment(target){
-  const card=target?.closest?.('[data-item-slot]')||document.activeElement?.closest?.('[data-item-slot]');
-  const slot=card?.dataset.itemSlot;
+  inspectGear(target);
+  const card=gearPinned?$('overlay').querySelector('[data-inspect="'+inspectedGear+'"]'):target?.closest?.('[data-item-slot]')||document.activeElement?.closest?.('[data-item-slot]');
+  const slot=card?.dataset?.itemSlot;
   for(const el of $('overlay').querySelectorAll('[data-equipment-slot], .gear-callouts [data-slot]')){
     el.classList.toggle('equipment-highlight',!!slot&&(el.dataset.equipmentSlot||el.dataset.slot)===slot);
   }
@@ -304,13 +337,33 @@ for(const name of ['pointerout','focusout'])$('overlay').addEventListener(name,e
 $('overlay').addEventListener('click', event => {
   const action = event.target.closest('[data-action]')?.dataset.action; if (!action) return;
   const [type, raw] = action.split(':'), i = Number(raw);
+  if(type==='salvage'&&modal==='complete'&&!world.salvageClaimed&&world.salvage?.[i]){
+    if(profile.bag.length>=BAG_LIMIT){toast('Рюкзак заполнен');return;}
+    world.salvageClaimed=true;giveItem(world.salvage[i]);save();updateUI();
+    for(const b of document.querySelectorAll('[data-action^="salvage:"]')){b.disabled=true;b.textContent=b.dataset.action===action?'Получено':'Выбор сделан';}
+  }
+  if(type==='inspect'&&['inventory','merchant'].includes(modal)){inspectGear({closest:()=>({dataset:{inspect:raw}})},true);}
   if (type === 'close' && !terminal()) closeModal();
+  if(type==='contract'&&['depart','workshop'].includes(modal)&&mode==='hub'){const offer=availableContracts().find(c=>c.id===raw);if(offer)expedition(offer.depth,offer.kind,false,offer);}
+  if(type==='workshop'&&mode==='hub')workshopMenu();
+  if(type==='build-workshop'&&mode==='hub'&&buildWorkshop(profile)){save();workshopMenu();}
+  if(type==='gadget'&&mode==='hub'){selectGadget(profile,raw);save();workshopMenu();}
+  if(type==='prepare-decoy'&&mode==='hub'){prepareDecoy(profile);save();workshopMenu();}
+  if(type==='prepare-emp'&&mode==='hub'){prepareEmp(profile);save();workshopMenu();}
+  if(type==='weapon-mod'&&mode==='hub'){selectModule(profile,raw);save();workshopMenu();}
+  if(type==='research'&&mode==='hub'){researchModule(profile,raw);save();workshopMenu();}
+  if(type==='board-tab'&&modal==='depart'&&['story','prep','all'].includes(raw))departure(raw);
+  if(type==='workshop-tab'&&modal==='workshop'&&['gadgets','modules'].includes(raw))workshopMenu(raw);
+  if(type==='board'&&mode==='hub')departure();
   if (type === 'hub') hub();
   if (type === 'start' && modal === 'depart') expedition();
   if(type==='test-location'&&modal==='depart'&&mode==='hub'&&cheatHotkeysEnabled&&Object.hasOwn(cheatLocations,raw))expedition(recommendedDepth(profile),raw);
   if (type === 'next' && modal === 'complete') expedition(world.depth + 1);
   if (type === 'inventory' && !terminal()) inventory();
   if (type === 'skills' && !terminal()) skillTree();
+  if(type==='branch'&&modal==='skills'&&Object.hasOwn(BRANCHES,raw)){skillBranch=raw;skillFocus=null;skillTree();}
+  if(type==='skill-overview'&&modal==='skills'){skillBranch=null;skillFocus=null;skillTree();}
+  if(type==='perk'&&modal==='skills'&&SKILLS[raw]?.branch===skillBranch){skillFocus=raw;skillTree();}
   if (type === 'learn' && modal === 'skills' && learnSkill(profile, raw)) { profile.threat = recommendedDepth(profile); skillTree(); }
   if (type === 'filter' && ['inventory','merchant'].includes(modal) && ['all', 'weapons', 'clothes'].includes(raw)) { bagFilter = raw; refreshGear(); }
   if (type === 'potion' && modal === 'merchant' && profile.gold >= BALANCE.potionCost) { profile.gold -= BALANCE.potionCost; profile.potions++; merchant(); }
@@ -356,6 +409,8 @@ function press(key) {
 }
 const physicalKeys = { Tab:'tab', Digit1:'1', Digit2:'2', Digit3:'3', Digit4:'4', Numpad1:'1', Numpad2:'2', Numpad3:'3', Numpad4:'4', KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyJ: 'j', KeyK: 'k', KeyR: 'r', KeyE: 'e', KeyQ: 'q', KeyB: 'b', KeyI: 'i', KeyP: 'p', ShiftLeft: 'shift', ShiftRight: 'shift', Space: ' ', Escape: 'escape', ArrowLeft: 'a', ArrowRight: 'd', ArrowUp: 'w', ArrowDown: 's' };
 window.addEventListener('keydown', event => {
+  if(event.code==='KeyH'&&!event.repeat&&!modal&&!loadingScene&&mode==='expedition'){if(useFieldKit(world,player,stats(profile).maxHp)){burst(player.x,player.y,'#73e8b4',20);toast('Полевой медкомплект: +35% здоровья');updateUI();}else toast('Медкомплект недоступен или здоровье полное');}
+  if(event.code==='KeyG'&&!event.repeat&&!modal&&!loadingScene&&mode==='expedition'){if(world.gadget==='decoy'?deployDecoy(world,player):deployEmp(world,player)){burst(player.x,player.y,'#6ae5ef',40);toast(world.gadget==='decoy'?'Голограмма активирована':'ЭМИ активирован');updateUI();}else toast('Нет подготовленного гаджета или голограмма уже активна. Мастерская — в хабе.');}
   if(loadingScene)return;
   if(event.ctrlKey&&event.altKey&&!event.metaKey&&!event.shiftKey){
     const code={Digit1:'godmode',Digit2:'oneshot',Digit3:'speed',Digit4:'ammo',Digit5:'jump',Digit6:'reroll',Digit7:'hub',Numpad1:'godmode',Numpad2:'oneshot',Numpad3:'speed',Numpad4:'ammo',Numpad5:'jump',Numpad6:'reroll',Numpad7:'hub'}[event.code];
@@ -437,30 +492,36 @@ document.querySelectorAll('[data-key]').forEach(element => {
 
 function burst(x, y, color, count = 10) { for (let i = 0; i < count; i++) particles.push({ x, y, vx: (Math.random() - .5) * 170, vy: -Math.random() * 150 - 30, life: .3 + Math.random() * .4, color }); }
 function float(text, x, y, color = '#f5ed4b') { floats.push({ text, x, y, color, life: 1 }); }
-function hitEnemy(enemy, raw = stats(profile).damage, sourceX = center(player).x, ranged = false) {
+function hitEnemy(enemy, raw = stats(profile).damage, sourceX = center(player).x, ranged = false, shot=null) {
   if (enemy.dead || enemy.dodge > 0) return;
-  const guarded = enemy.role === 'heavy' && (sourceX - center(enemy).x) * enemy.facing > 0 && enemy.state !== 'recover' && enemy.state !== 'windup';
+  raw*=variantHit(enemy,sourceX,ranged);
+  const guarded = enemy.role === 'heavy' && enemy.variant!=='shield' && (sourceX - center(enemy).x) * enemy.facing > 0 && enemy.state !== 'recover' && enemy.state !== 'windup';
   const perks = stats(profile).perks;
+  const moduleEffect=meleeModuleEffect(profile,ranged,enemy.turret);raw*=moduleEffect.damage;
   const bonus = (enemy.role === 'heavy' ? perks.breach || 0 : 0) + (enemy.state === 'recover' ? perks.exploit || 0 : 0) + (ranged && enemy.hp / enemy.maxHp < .35 ? perks.execution || 0 : 0);
   const damage = cheats.oneshot?Math.max(1,enemy.hp):Math.max(1, Math.round(raw * (1 + bonus) * (guarded ? .5 : ranged && enemy.role === 'heavy' ? .8 : 1)));
   enemy.hp -= damage; enemy.flash = .12;
-  if(!(ranged&&enemy.role==='heavy'))enemy.x = Math.max(20, Math.min(world.width - 60, enemy.x + Math.sign(enemy.x - sourceX) * 5));
+  if(!ranged){player.stamina=Math.min(stats(profile).maxStamina,player.stamina+gearMeleeStamina(profile));}
+  const push=shot?.repulsor&&enemy.lastRepulsorShot!==shot.volley&&enemy.role!=='heavy'&&!enemy.turret?35:0;
+  if(push)enemy.lastRepulsorShot=shot.volley;
+  if(push){const dx=Math.sign(enemy.x-sourceX)*push;enemy.vx=dx*5;enemy.x=Math.max(20,Math.min(world.width-enemy.w-20,enemy.x+dx));}
+  if(!enemy.turret&&!(ranged&&enemy.role==='heavy'))enemy.x = Math.max(20, Math.min(world.width - 60, enemy.x + Math.sign(enemy.x - sourceX) * 5));
   float(guarded ? `${damage} БРОНЯ` : damage, enemy.x, enemy.y - 12); burst(enemy.x + 15, enemy.y + 15, '#fb736b');
   if (enemy.hp <= 0) {
     enemy.dead = true; world.kills++;
     const reward = enemyReward(enemy, world.depth); profile.gold += reward.gold; world.earned += reward.gold;
     const levels = addXp(profile, reward.xp); float(`+${reward.gold} €$ / ${reward.xp} XP`, enemy.x, enemy.y - 35);
-    player.hp = Math.min(stats(profile).maxHp, player.hp + (perks.killHeal || 0));
+    player.hp = Math.min(stats(profile).maxHp, player.hp + (perks.killHeal || 0) + Math.round(stats(profile).maxHp*moduleEffect.heal));
     if (levels) { player.hp = Math.min(stats(profile).maxHp, player.hp + 20); toast(`Уровень ${profile.level}. +${levels * 2} очка способностей! Нажми P для прокачки.`); }
     if (Math.random() < BALANCE.killDrop) giveItem(makeItem(world.depth));
-    if (world.kills === world.enemies.length) toast('Сектор чист. Путь свободен — доберись до точки отправления.');
+    if (contractReady(world)) toast('Задача выполнена — доберись до точки отправления.');
     save(); updateUI();
   }
 }
 function damagePlayer(raw, sourceX) {
   if(cheats.godmode)return;
   player.blockCostMultiplier = stats(profile).blockCostMultiplier;
-  const result = incomingDamage(player, raw, sourceX, stats(profile).armor);
+  const result = incomingDamage(player, raw*gearIncoming(profile,player.hp,stats(profile).maxHp), sourceX, stats(profile).armor);
   if (!result.damage) return;
   player.hp = Math.max(0, player.hp - result.damage); player.invuln = result.blocked ? .12 : .45; player.regenDelay = .8;
   shake = result.blocked ? .06 : .16; float(result.blocked ? 'БЛОК' : `−${result.damage}`, player.x, player.y - 12, result.blocked ? '#45e5e0' : '#ff655c');
@@ -483,10 +544,10 @@ function slash() {
 }
 function roll() {
   if(player.climbing!=null)return false;
-  if (player.dodgeCooldown > 0 || player.stamina < stats(profile).rollCost || player.guardBreak > 0 || !player.grounded && !stats(profile).perks.airDash) return false;
+  if (player.dodgeCooldown > 0 || player.stamina < stats(profile).rollCost*gearRoll(profile).cost || player.guardBreak > 0 || !player.grounded && !stats(profile).perks.airDash) return false;
   const direction = (keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0);
   player.rollDir = direction || player.facing; player.dodge = .32; player.dodgeCooldown = .85;
-  player.stamina -= stats(profile).rollCost; player.regenDelay = .6; player.attack = 0; player.blocking = false; return true;
+  player.stamina -= stats(profile).rollCost*gearRoll(profile).cost; player.regenDelay = .6; player.attack = 0; player.blocking = false; return true;
 }
 function reload() {
   if(cheats.ammo)return;
@@ -497,21 +558,30 @@ function reload() {
   updateHUD();updateReloadIndicator();
 }
 function shoot() {
-  const cfg = WEAPONS[player.activeWeapon];
+  let cfg = WEAPONS[player.activeWeapon];
+  const mod=workshopState(profile).built?workshopState(profile).mod:'standard';
+  if(mod==='duplex'&&player.activeWeapon==='gun')cfg={...cfg,pellets:2,spread:.09};
+  if(mod==='slug'&&player.activeWeapon==='shotgun')cfg={...cfg,pellets:1,spread:0,range:650,speed:900};
   if (cfg.kind !== 'gun' || !profile.equipment[player.activeWeapon] || player.shotCooldown > 0 || player.reload > 0 || player.dodge > 0 || player.blocking || player.attack > 0) return;
   if (!player.ammo) { reload(); return; }
   updateAim();
   const from = aimedMuzzle(player);
-  const damage = stats(profile)[player.activeWeapon === 'rifle' ? 'rifleDamage' : player.activeWeapon === 'shotgun' ? 'shotgunDamage' : 'gunDamage'];
+  let damage = stats(profile)[player.activeWeapon === 'rifle' ? 'rifleDamage' : player.activeWeapon === 'shotgun' ? 'shotgunDamage' : 'gunDamage'];
+  if(mod==='duplex'&&player.activeWeapon==='gun')damage*=.6;
+  if(mod==='slug'&&player.activeWeapon==='shotgun')damage*=3;
+  damage*=gearShot(profile,player.activeWeapon,player.ammo).damage;
   const direction = aimDirection(player,mouse.active?{x:mouse.x+camera,y:mouse.y+cameraY}:null);
   const angle = Math.atan2(direction.y, direction.x);
+  const volley={};
   for (let pellet = 0; pellet < cfg.pellets; pellet++) {
     const spread = cfg.pellets > 1 ? (pellet / (cfg.pellets - 1) * 2 - 1) * cfg.spread : (Math.random() - .5) * (player.activeWeapon==='rifle'?rifleSpread(player.rifleHeat||0):cfg.spread);
     bullets.push(projectile('player', from, { x: from.x + Math.cos(angle + spread) * 500, y: from.y + Math.sin(angle + spread) * 500 }, damage, cfg.speed,cfg));
+    Object.assign(bullets.at(-1),{volley,repulsor:gearKnockback(profile,player.activeWeapon,{role:'runner'})>0});
   }
-  if(player.activeWeapon==='rifle'){player.rifleHeat=Math.min(1,(player.rifleHeat||0)+.22);player.rifleRest=0;}
+  if(player.activeWeapon==='rifle'){player.rifleHeat=Math.min(1,(player.rifleHeat||0)+.22*gearShot(profile,player.activeWeapon,player.ammo).heat);player.rifleRest=0;}
   if(!cheats.ammo)player.ammo--; player.magazines[player.activeWeapon] = player.ammo;
   player.shotCooldown = fireInterval(player.activeWeapon,stats(profile).perks.fireSaving||0);
+  if((mod==='duplex'&&player.activeWeapon==='gun')||(mod==='slug'&&player.activeWeapon==='shotgun'))player.shotCooldown*=1.25;
   player.fireVisual = .18;
   burst(from.x, from.y, '#f9ed48', cfg.pellets > 1 ? 7 : 4);
 }
@@ -523,11 +593,11 @@ function updateBullets(dt) {
     const nx=step.x,ny=step.y;
     let first = null, firstT = Infinity;
     for (const platform of world.platforms) { if(platform.stair)continue; const t = segmentHit(b.x, b.y, nx, ny, platform); if (t !== null && t < firstT) { firstT = t; first = { platform }; } }
-    const actors = b.owner === 'player' ? world.enemies.filter(e => !e.dead && e.dodge <= 0) : [player];
+    const actors = b.owner === 'player' ? world.enemies.filter(e => !e.dead && e.dodge <= 0) : [player,...(world.decoy?[world.decoy]:[])];
     for (const actor of actors) { const t = segmentHit(b.x, b.y, nx, ny, actor, 2); if (t !== null && t < firstT) { firstT = t; first = { actor }; } }
     if (first) {
       const damage=projectileDamage(b,(b.traveled||0)+step.distance*firstT);
-      if (first.actor) { if (b.owner === 'player') hitEnemy(first.actor, damage, b.x - Math.sign(b.vx) * 10, true); else damagePlayer(damage, b.x - Math.sign(b.vx) * 10); }
+      if (first.actor) { if (b.owner === 'player') hitEnemy(first.actor, damage, b.x - Math.sign(b.vx) * 10, true,b); else if(first.actor.decoy)hitDecoy(world,damage);else damagePlayer(damage, b.x - Math.sign(b.vx) * 10); }
       burst(b.x + (nx - b.x) * firstT, b.y + (ny - b.y) * firstT, '#f8b84c', 4); b.life = 0;
     } else { b.x = nx; b.y = ny; b.traveled=(b.traveled||0)+step.distance;b.life = step.expired?0:b.life-dt; }
     if (terminal()) break;
@@ -535,6 +605,7 @@ function updateBullets(dt) {
   bullets = bullets.filter(b => b.life > 0);
 }
 function update(dt) {
+  if(world.empPulse)world.empPulse.time=Math.max(0,world.empPulse.time-dt);
   const p = player;
   coolRifle(p,dt);
   for (const field of ['invuln', 'cooldown', 'attack', 'drop', 'dodge', 'dodgeCooldown', 'guardBreak', 'regenDelay', 'shotCooldown', 'fireVisual', 'healCooldown']) p[field] = Math.max(0, p[field] - dt);
@@ -545,7 +616,7 @@ function update(dt) {
   if (p.vx) p.facing = Math.sign(p.vx);
   if (mouse.active && p.dodge <= 0) p.facing = mouse.x + camera >= center(p).x ? 1 : -1;
   if (p.vx * p.facing < 0) p.vx *= .8;
-  if (p.dodge > 0) { p.vx = p.rollDir * 560; p.facing = p.rollDir; }
+  if (p.dodge > 0) { p.vx = p.rollDir * 560*gearRoll(profile).speed; p.facing = p.rollDir; }
   if (p.blocking) { p.stamina = Math.max(0, p.stamina - 10 * stats(profile).blockCostMultiplier * dt); p.regenDelay = .3; }
   else if (!p.regenDelay) p.stamina = Math.min(stats(profile).maxStamina, p.stamina + stats(profile).staminaRegen * dt);
   const climbDirection=(keys.has('s')?1:0)-(keys.has('w')?1:0);
@@ -558,6 +629,9 @@ function update(dt) {
   updateAim();
   if (keys.has('j')) useWeapon();
   physics(p, world, dt);
+  const signalEvent=updateSignal(world,p,dt);
+  if(signalEvent){toast(signalEvent==='complete'?contractObjective(world):'Подкрепление в секторе!');updateUI();}
+  if(world.decoy){world.decoy.life=Math.max(0,world.decoy.life-dt);if(world.decoy.life>0)physics(world.decoy,world,dt);else world.decoy=null;}
   updateEnemies(world, p, bullets, dt, damagePlayer);
   if (terminal()) return;
   if (p.attack > 0 && p.attack < WEAPONS.weapon.duration - animationInfo(p).contactAt && !p.attackHit) { p.attackHit = true; slash(); }
@@ -575,9 +649,13 @@ function update(dt) {
   findTarget();
 }
 function findTarget() {
-  const candidates = [{ kind: 'portal', x: world.portal.x, y: world.portal.y - 30, label: mode === 'hub' ? `Автомобиль / Контракты · Угроза ${recommendedDepth(profile)}` : world.kills === world.enemies.length ? 'Вызвать транспорт / Следующий сектор' : 'Эвакуация небезопасна' }];
+  const candidates = [{ kind: 'portal', x: world.portal.x, y: world.portal.y - 30, label: mode === 'hub' ? `Автомобиль / Контракты · Угроза ${recommendedDepth(profile)}` : contractReady(world) ? 'Вызвать транспорт / Следующий сектор' : 'Эвакуация небезопасна' }];
   if (mode === 'hub') candidates.push({ kind: 'merchant', x: 325, y: GROUND - 30, label: 'Мира · Оружейник' }, { kind: 'trainer', x: 800, y: GROUND - 30, label: 'Орин · Рипер' }, { kind: 'medbay', x: 580, y: GROUND - 15, label: 'Медстанция · Восстановление' });
   for (const c of world.chests) if (!c.open) candidates.push({ kind: 'chest', x: c.x, y: c.y, label: 'Вскрыть тайник', object: c });
+  for(const n of world.sabotageNodes||[])if(!n.disabled)candidates.push({kind:'sabotage',x:n.x,y:n.y-25,label:`Отключить узел ${n.id+1}`,object:n});
+  if(world.powerSwitch&&!world.powerSwitch.disabled)candidates.push({kind:'power',x:world.powerSwitch.x,y:world.powerSwitch.y-20,label:'Отключить питание турели'});
+  if(world.package&&!world.package.taken)candidates.push({kind:'package',x:world.package.x,y:world.package.y-20,label:'Забрать '+(world.package.name||'прототип')});
+  if(world.signal&&!world.signal.started)candidates.push({kind:'signal',x:world.signal.x,y:world.signal.y-25,label:'Начать перехват сигнала'});
   const stairwell=findStairwell(player,world);
   if(stairwell)candidates.unshift({kind:'stairwell',x:stairwell.start.x,y:stairwell.start.y-player.h/2,label:world.towerScene?`Лестничный проход · Ярус ${(stairwell.up?stairwell.connection.to:stairwell.connection.from)+1}`:stairwell.up?'Внутренняя лестница · На второй этаж':'Внутренняя лестница · На первый этаж',object:stairwell});
   target = candidates.filter(t => Math.abs(t.x - center(player).x) < 77 && Math.abs(t.y - center(player).y) < 65).sort((a, b) => Math.abs(a.x - player.x) - Math.abs(b.x - player.x))[0];
@@ -628,7 +706,7 @@ async function loadScene(title,setup){
       await prepareSprites(profile.equipment,p=>loadingProgress(.45+p*.15,'Подготовка снаряжения…'));preparedEquipment=equipmentSignature();
     }
     await prepareEnvironment(p=>loadingProgress(.60+p*.25,'Подготовка освещения…'),world);
-    await prepareScene();render();hideLoading();loadingScene=false;canvas.focus({preventScroll:true});
+    await prepareScene();paintPreviews(profile.equipment,0);render();hideLoading();loadingScene=false;canvas.focus({preventScroll:true});
   }catch(error){loadingError(error);}
 }
 async function boot(){
@@ -642,9 +720,9 @@ async function boot(){
     preparedEquipment=equipmentSignature();
     await prepareEnvironment(p=>loadingProgress(.60+p*.25,'Подготовка освещения и окружения…'),world);
     resize();new ResizeObserver(resize).observe(canvas.parentElement);
-    await prepareScene();render();hideLoading();loadingScene=false;last=performance.now();
+    await prepareScene();paintPreviews(profile.equipment,0);render();hideLoading();loadingScene=false;last=performance.now();
     canvas.focus({preventScroll:true});requestAnimationFrame(frame);
-    toast('1–4 — выбрать оружие · ЛКМ — атака · ПКМ — блок · Shift — перекат · Tab — персонаж.');
+    toast('WASD — движение · ЛКМ — атака · ? — управление');
   }catch(error){loadingError(error);}
 }
 boot();

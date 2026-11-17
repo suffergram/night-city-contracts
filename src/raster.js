@@ -212,13 +212,22 @@ function drawAimedActor(ctx, actor, equipment, options) {
   ctx.restore(); return true;
 }
 export function previewMarkup(equipment) {
-  const locations = { head: [148, 72], torso: [140, 160], legs: [128, 274], feet: [135, 355], weapon: [204, 239], gun: [110, 208] };
-  const callouts = Object.entries(locations).filter(([slot]) => equipment[slot]).map(([slot, [x, y]]) => `<g data-slot="${slot}"><path d="M${x} ${y}h${x > 140 ? 32 : -30}"/><circle cx="${x}" cy="${y}" r="2"/></g>`).join('');
-  return `<div class="raster-stage"><canvas class="raster-avatar" width="600" height="900" aria-label="Растровый портрет наёмника с надетой экипировкой"></canvas><svg class="gear-callouts" viewBox="0 0 260 400" aria-hidden="true">${callouts}</svg></div>`;
+  const callouts = Object.entries(previewCalloutAnchors()).filter(([slot]) => equipment[slot]).map(([slot, [x, y]]) => {const d=calloutPath(slot,x,y);return `<g data-slot="${slot}"><path class="callout-shadow" d="${d}"/><path d="${d}"/><circle cx="${x}" cy="${y}" r="7"/></g>`;}).join('');
+  return `<div class="raster-stage"><canvas class="raster-avatar" width="600" height="900" aria-label="Растровый портрет наёмника с надетой экипировкой"></canvas><svg class="gear-callouts" viewBox="0 0 600 900" preserveAspectRatio="none" aria-hidden="true">${callouts}</svg></div>`;
 }
-export function paintPreviews(equipment, time) {
+function calloutPath(slot,x,y){const direction=['weapon','head','torso'].includes(slot)?1:-1;return `M${x} ${y}l${direction*32} -20h${direction*65}m0 -5v10`;}
+export function previewCalloutAnchors(frame=0){
+  const pose=materialPose('hero',frame),box=spriteGeometry(810),head=pose.head||[.53,.115],hip=pose.hip||[.44,.55];
+  const blade=pose.blades?.[0]||[.28,.55,.86,.74];
+  const points={head,torso:[(head[0]+hip[0])*.5,(head[1]+hip[1])*.5],legs:[(hip[0]+(pose.legs?.[0]?.[0]?.[0]??.34))*.5,(hip[1]+(pose.legs?.[0]?.[0]?.[1]??.72))*.5],feet:pose.legs?.[0]?.[2]||[.37,.97],weapon:[blade[0]+(blade[2]-blade[0])*.7,blade[1]+(blade[3]-blade[1])*.7],gun:[.30,.58]};
+  points.head=[head[0]-.025,head[1]-.035];
+  const ankle=pose.legs?.[0]?.[1]||[.31,.89];
+  points.feet=[(ankle[0]+points.feet[0])*.5,(ankle[1]+points.feet[1])*.5];
+  return Object.fromEntries(Object.entries(points).map(([slot,[x,y]])=>[slot,[282+box.x+x*box.w,828+box.y+y*box.h]]));
+}
+export function paintPreviews(equipment, time, selector='canvas.raster-avatar') {
   if (typeof document === 'undefined' || !sheets.has('hero')) return;
-  for (const canvas of document.querySelectorAll('canvas.raster-avatar')) {
+  for (const canvas of document.querySelectorAll(selector)) {
     const ctx = canvas.getContext('2d'); if (!ctx) continue;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const portrait = canvas.classList.contains('closeup');
@@ -228,5 +237,6 @@ export function paintPreviews(equipment, time) {
     const actor = { animation: { name: 'idle', time } };
     drawRasterActor(ctx, actor, 'hero', equipment, { height: portrait ? canvas.height * 3.55 : canvas.height * .9 });
     ctx.restore();
+    if(!portrait){const overlay=canvas.parentElement?.querySelector('.gear-callouts');if(overlay){const anchors=previewCalloutAnchors(animationFrame(actor,'hero'));for(const g of overlay.querySelectorAll('[data-slot]')){const [x,y]=anchors[g.dataset.slot];for(const path of g.querySelectorAll('path'))path.setAttribute('d',calloutPath(g.dataset.slot,x,y));const dot=g.querySelector('circle');dot.setAttribute('cx',x);dot.setAttribute('cy',y);}}}
   }
 }
